@@ -1,0 +1,32 @@
+# Node / Next.js
+**/node_modules/
+**/.next/
+**/dist/
+**/build/
+**/out/
+**/coverage/
+
+# .NET
+**/bin/
+**/obj/
+.vs/
+*.user
+*.suo
+
+# Environment and secrets
+.env
+.env.*
+!.env.example
+
+# Logs
+*.log
+logs/
+
+# Database files
+*.mdf
+*.ldf
+*.bak
+
+# Operating system files
+Thumbs.db
+.DS_Store

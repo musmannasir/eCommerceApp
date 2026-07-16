@@ -1,0 +1,39 @@
+@inject Microsoft.Extensions.Configuration.IConfiguration Configuration
+@{
+    var storeName = Configuration["Store:Name"] ?? "ECommerceApp Store";
+}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>@ViewData["Title"] - @storeName Admin</title>
+    <link rel="stylesheet" href="~/lib/bootstrap/dist/css/bootstrap.min.css" />
+    <link rel="stylesheet" href="~/css/admin.css" asp-append-version="true" />
+</head>
+<body class="admin-body">
+    <nav class="navbar navbar-dark bg-dark px-3">
+        <a class="navbar-brand" asp-area="Admin" asp-controller="Home" asp-action="Index">@storeName &mdash; Admin</a>
+        <span class="navbar-text text-white-50" aria-disabled="true">Signed-in admin (Milestone 1)</span>
+    </nav>
+    <div class="d-flex admin-shell">
+        <aside class="admin-sidebar bg-light border-end">
+            <ul class="nav flex-column py-3">
+                <li class="nav-item"><a class="nav-link" asp-area="Admin" asp-controller="Home" asp-action="Index">Dashboard</a></li>
+                <li class="nav-item"><span class="nav-link disabled" aria-disabled="true">Catalog</span></li>
+                <li class="nav-item"><span class="nav-link disabled" aria-disabled="true">Inventory</span></li>
+                <li class="nav-item"><span class="nav-link disabled" aria-disabled="true">Orders</span></li>
+                <li class="nav-item"><span class="nav-link disabled" aria-disabled="true">Customers</span></li>
+                <li class="nav-item"><span class="nav-link disabled" aria-disabled="true">Marketing</span></li>
+                <li class="nav-item"><span class="nav-link disabled" aria-disabled="true">Reports</span></li>
+                <li class="nav-item"><span class="nav-link disabled" aria-disabled="true">Settings</span></li>
+            </ul>
+        </aside>
+        <main class="flex-grow-1 p-4">
+            @RenderBody()
+        </main>
+    </div>
+    <script src="~/lib/bootstrap/dist/js/bootstrap.bundle.min.js"></script>
+    @await RenderSectionAsync("Scripts", required: false)
+</body>
+</html>

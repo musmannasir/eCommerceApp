@@ -1,0 +1,74 @@
+using ECommerceApp.Application.Auth;
+using ECommerceApp.Application.Common.Interfaces;
+using ECommerceApp.Application.Common.Options;
+using ECommerceApp.Infrastructure.Common;
+using ECommerceApp.Infrastructure.Email;
+using ECommerceApp.Infrastructure.HealthChecks;
+using ECommerceApp.Infrastructure.Identity;
+using ECommerceApp.Infrastructure.Persistence;
+using ECommerceApp.Infrastructure.Security;
+using Microsoft.AspNetCore.Identity;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+
+namespace ECommerceApp.Infrastructure;
+
+public static class DependencyInjection
+{
+    /// <summary>
+    /// Registers Infrastructure-layer services: the EF Core SQL Server context,
+    /// ASP.NET Core Identity (store + password/lockout policy), the auth
+    /// service, the UTC clock, and the database health check.
+    /// <see cref="ICurrentUserService"/> is registered by the Web layer, which
+    /// owns the HTTP context. Authentication schemes (cookie/JWT) and cookie
+    /// hosting options are also configured by the Web layer, which owns the
+    /// HTTP pipeline.
+    /// </summary>
+    public static IServiceCollection AddInfrastructure(this IServiceCollection services, IConfiguration configuration)
+    {
+        services.AddDbContext<ApplicationDbContext>(options =>
+        {
+            var connectionString = configuration.GetConnectionString("DefaultConnection")
+                ?? throw new InvalidOperationException(
+                    "Connection string 'DefaultConnection' was not found. Configure it via User Secrets " +
+                    "(see README.md) before running the application.");
+
+            options.UseSqlServer(connectionString, sql =>
+                sql.MigrationsAssembly(typeof(ApplicationDbContext).Assembly.FullName));
+        });
+
+        services.AddSingleton<IClock, SystemClock>();
+
+        services.AddHealthChecks()
+            .AddCheck<SqlServerHealthCheck>("sql-server", tags: new[] { "ready" });
+
+        services.Configure<JwtSettings>(configuration.GetSection("Jwt"));
+
+        services
+            .AddIdentity<ApplicationUser, IdentityRole>(options =>
+            {
+                options.Password.RequiredLength = 10;
+                options.Password.RequireDigit = true;
+                options.Password.RequireLowercase = true;
+                options.Password.RequireUppercase = true;
+                options.Password.RequireNonAlphanumeric = true;
+                options.Password.RequiredUniqueChars = 4;
+
+                options.Lockout.AllowedForNewUsers = true;
+                options.Lockout.MaxFailedAccessAttempts = 5;
+                options.Lockout.DefaultLockoutTimeSpan = TimeSpan.FromMinutes(15);
+
+                options.User.RequireUniqueEmail = true;
+                options.SignIn.RequireConfirmedAccount = false;
+            })
+            .AddEntityFrameworkStores<ApplicationDbContext>()
+            .AddDefaultTokenProviders();
+
+        services.AddScoped<IAuthService, AuthService>();
+        services.AddScoped<RoleAndAdminSeeder>();
+        services.AddSingleton<IEmailSender, DevEmailSender>();
+
+        return services;
+    }
+}

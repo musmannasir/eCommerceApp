@@ -1,0 +1,19 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(dotnet --version)",
+      "Bash(dotnet --list-sdks)",
+      "Bash(sqlcmd -?)",
+      "Bash(dotnet --list-runtimes)",
+      "Read(//c/Users/MuhammadUsman/AppData/Local/Temp/tmp.uQ6DSosAwQ/probe2/**)",
+      "Read(//c/Users/MuhammadUsman/AppData/Local/Temp/**)",
+      "Bash(ls \"/c/Program Files/dotnet/packs/\" 2>&1 *)",
+      "Bash(rm -rf /c/Users/MuhammadUsman/AppData/Local/Temp/tmp.* 2>/dev/null; echo done)",
+      "Bash(dotnet new *)",
+      "Bash(dotnet sln *)",
+      "Bash(dotnet add *)",
+      "Bash(rm -f src/ECommerceApp.Domain/Class1.cs src/ECommerceApp.Application/Class1.cs src/ECommerceApp.Infrastructure/Class1.cs)",
+      "Bash(rm -f tests/ECommerceApp.Domain.Tests/UnitTest1.cs tests/ECommerceApp.Application.Tests/UnitTest1.cs tests/ECommerceApp.Infrastructure.Tests/UnitTest1.cs tests/ECommerceApp.Web.Tests/UnitTest1.cs tests/ECommerceApp.IntegrationTests/UnitTest1.cs)"
+    ]
+  }
+}

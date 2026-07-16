@@ -1,0 +1,39 @@
+@model CurrentUserDto
+@{
+    ViewData["Title"] = "Your profile";
+}
+
+<div class="row justify-content-center py-5">
+    <div class="col-md-8 col-lg-6">
+        <h1 class="h3 mb-4">Your profile</h1>
+
+        @if (TempData["Message"] is string message)
+        {
+            <div class="alert alert-info">@message</div>
+        }
+
+        <dl class="row">
+            <dt class="col-sm-4">Name</dt>
+            <dd class="col-sm-8">@Model.FirstName @Model.LastName</dd>
+
+            <dt class="col-sm-4">Email</dt>
+            <dd class="col-sm-8">@Model.Email</dd>
+
+            <dt class="col-sm-4">Roles</dt>
+            <dd class="col-sm-8">@string.Join(", ", Model.Roles)</dd>
+
+            <dt class="col-sm-4">Member since</dt>
+            <dd class="col-sm-8">@Model.CreatedAtUtc.ToString("yyyy-MM-dd") UTC</dd>
+
+            <dt class="col-sm-4">Last login</dt>
+            <dd class="col-sm-8">@(Model.LastSuccessfulLoginAtUtc?.ToString("yyyy-MM-dd HH:mm") + " UTC" ?? "This is your first login")</dd>
+        </dl>
+
+        <div class="d-flex gap-2">
+            <a class="btn btn-outline-secondary" asp-action="ChangePassword">Change password</a>
+            <form asp-action="RevokeAllSessions" method="post" onsubmit="return confirm('This will sign you out everywhere, including this device. Continue?');">
+                <button type="submit" class="btn btn-outline-danger">Revoke all sessions</button>
+            </form>
+        </div>
+    </div>
+</div>

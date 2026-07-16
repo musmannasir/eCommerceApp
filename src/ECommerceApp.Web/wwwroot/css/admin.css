@@ -1,0 +1,12 @@
+.admin-body {
+  min-height: 100vh;
+}
+
+.admin-shell {
+  min-height: calc(100vh - 56px);
+}
+
+.admin-sidebar {
+  width: 220px;
+  flex-shrink: 0;
+}
