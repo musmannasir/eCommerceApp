@@ -1,0 +1,139 @@
+@model ProductFormViewModel
+
+<input type="hidden" asp-for="Id" />
+<div asp-validation-summary="ModelOnly"></div>
+
+<div class="row">
+    <div class="col-md-8 mb-3">
+        <label asp-for="Name" class="form-label"></label>
+        <input asp-for="Name" class="form-control" />
+        <span asp-validation-for="Name" class="text-danger small"></span>
+    </div>
+    <div class="col-md-4 mb-3">
+        <label asp-for="Slug" class="form-label"></label>
+        <input asp-for="Slug" class="form-control" placeholder="Auto-generated if blank" />
+    </div>
+</div>
+
+<div class="mb-3">
+    <label asp-for="ShortDescription" class="form-label"></label>
+    <input asp-for="ShortDescription" class="form-control" />
+</div>
+
+<div class="mb-3">
+    <label asp-for="FullDescription" class="form-label"></label>
+    <textarea asp-for="FullDescription" class="form-control" rows="4"></textarea>
+</div>
+
+<div class="row">
+    <div class="col-md-6 mb-3">
+        <label asp-for="CategoryId" class="form-label"></label>
+        <select asp-for="CategoryId" class="form-select"
+                asp-items="@(new SelectList(Model.AvailableCategories, nameof(CategoryDto.Id), nameof(CategoryDto.Name)))">
+            <option value="">-- Select --</option>
+        </select>
+        <span asp-validation-for="CategoryId" class="text-danger small"></span>
+    </div>
+    <div class="col-md-6 mb-3">
+        <label asp-for="BrandId" class="form-label"></label>
+        <select asp-for="BrandId" class="form-select"
+                asp-items="@(new SelectList(Model.AvailableBrands, nameof(BrandDto.Id), nameof(BrandDto.Name)))">
+            <option value="">-- None --</option>
+        </select>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-md-3 mb-3">
+        <label asp-for="BaseSKU" class="form-label"></label>
+        <input asp-for="BaseSKU" class="form-control" />
+        <span asp-validation-for="BaseSKU" class="text-danger small"></span>
+    </div>
+    <div class="col-md-3 mb-3">
+        <label asp-for="CostPrice" class="form-label"></label>
+        <input asp-for="CostPrice" class="form-control" type="number" step="0.01" />
+        <span asp-validation-for="CostPrice" class="text-danger small"></span>
+    </div>
+    <div class="col-md-3 mb-3">
+        <label asp-for="SellingPrice" class="form-label"></label>
+        <input asp-for="SellingPrice" class="form-control" type="number" step="0.01" />
+        <span asp-validation-for="SellingPrice" class="text-danger small"></span>
+    </div>
+    <div class="col-md-3 mb-3">
+        <label asp-for="CompareAtPrice" class="form-label"></label>
+        <input asp-for="CompareAtPrice" class="form-control" type="number" step="0.01" />
+        <span asp-validation-for="CompareAtPrice" class="text-danger small"></span>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-md-3 mb-3">
+        <label asp-for="TaxCategory" class="form-label"></label>
+        <input asp-for="TaxCategory" class="form-control" />
+    </div>
+    <div class="col-md-3 mb-3 form-check pt-4">
+        <input asp-for="IsTaxable" class="form-check-input" />
+        <label asp-for="IsTaxable" class="form-check-label"></label>
+    </div>
+    <div class="col-md-3 mb-3 form-check pt-4">
+        <input asp-for="IsActive" class="form-check-input" />
+        <label asp-for="IsActive" class="form-check-label"></label>
+    </div>
+    <div class="col-md-3 mb-3 form-check pt-4">
+        <input asp-for="IsFeatured" class="form-check-input" />
+        <label asp-for="IsFeatured" class="form-check-label"></label>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-md-3 mb-3">
+        <label asp-for="Weight" class="form-label"></label>
+        <input asp-for="Weight" class="form-control" type="number" step="0.001" />
+    </div>
+    <div class="col-md-3 mb-3">
+        <label asp-for="Length" class="form-label"></label>
+        <input asp-for="Length" class="form-control" type="number" step="0.001" />
+    </div>
+    <div class="col-md-3 mb-3">
+        <label asp-for="Width" class="form-label"></label>
+        <input asp-for="Width" class="form-control" type="number" step="0.001" />
+    </div>
+    <div class="col-md-3 mb-3">
+        <label asp-for="Height" class="form-label"></label>
+        <input asp-for="Height" class="form-control" type="number" step="0.001" />
+    </div>
+</div>
+
+<div class="mb-3">
+    <label asp-for="WarrantyInformation" class="form-label"></label>
+    <textarea asp-for="WarrantyInformation" class="form-control" rows="2"></textarea>
+</div>
+<div class="mb-3">
+    <label asp-for="ReturnEligibility" class="form-label"></label>
+    <input asp-for="ReturnEligibility" class="form-control" />
+</div>
+<div class="row">
+    <div class="col-md-4 mb-3">
+        <label asp-for="LowStockThreshold" class="form-label"></label>
+        <input asp-for="LowStockThreshold" class="form-control" type="number" />
+    </div>
+    <div class="col-md-8 mb-3">
+        <label asp-for="SearchKeywords" class="form-label"></label>
+        <input asp-for="SearchKeywords" class="form-control" />
+    </div>
+</div>
+
+<fieldset class="border rounded p-3 mb-3">
+    <legend class="h6">SEO</legend>
+    <div class="mb-3">
+        <label asp-for="MetaTitle" class="form-label"></label>
+        <input asp-for="MetaTitle" class="form-control" />
+    </div>
+    <div class="mb-3">
+        <label asp-for="MetaDescription" class="form-label"></label>
+        <textarea asp-for="MetaDescription" class="form-control" rows="2"></textarea>
+    </div>
+</fieldset>
+
+<button type="submit" class="btn btn-primary">Save</button>
+<a asp-action="Index" class="btn btn-outline-secondary">Cancel</a>

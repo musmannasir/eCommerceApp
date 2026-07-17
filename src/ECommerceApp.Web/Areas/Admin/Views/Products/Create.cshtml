@@ -1,0 +1,11 @@
+@model ProductFormViewModel
+@{
+    ViewData["Title"] = "New product";
+}
+
+<h1 class="h3 mb-4">New product</h1>
+<p class="text-muted">Save the product first, then add images, variants, specifications, and tags on the edit page.</p>
+
+<form asp-action="Create" method="post">
+    @await Html.PartialAsync("_Form", Model)
+</form>

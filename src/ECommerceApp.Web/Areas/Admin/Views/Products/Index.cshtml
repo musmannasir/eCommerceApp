@@ -1,0 +1,121 @@
+@model PagedResult<ProductListItemDto>
+@{
+    ViewData["Title"] = "Products";
+    var search = ViewData["Search"] as string;
+    var categories = (IReadOnlyList<CategoryDto>)ViewData["Categories"]!;
+    var brands = (IReadOnlyList<BrandDto>)ViewData["Brands"]!;
+    var selectedCategoryId = ViewData["SelectedCategoryId"] as int?;
+    var selectedBrandId = ViewData["SelectedBrandId"] as int?;
+}
+
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h1 class="h3 mb-0">Products</h1>
+    <div class="d-flex gap-2">
+        <a asp-action="Deleted" class="btn btn-outline-secondary">Recycle bin</a>
+        <a asp-action="Create" class="btn btn-primary">New product</a>
+    </div>
+</div>
+
+@if (TempData["Message"] is string message)
+{
+    <div class="alert alert-success">@message</div>
+}
+@if (TempData["Error"] is string error)
+{
+    <div class="alert alert-danger">@error</div>
+}
+
+<form method="get" class="row g-2 mb-3">
+    <div class="col-auto">
+        <input type="search" name="search" value="@search" class="form-control" placeholder="Search name or SKU" />
+    </div>
+    <div class="col-auto">
+        <select name="categoryId" class="form-select">
+            <option value="">All categories</option>
+            @foreach (var category in categories)
+            {
+                <option value="@category.Id" selected="@(category.Id == selectedCategoryId)">@category.Name</option>
+            }
+        </select>
+    </div>
+    <div class="col-auto">
+        <select name="brandId" class="form-select">
+            <option value="">All brands</option>
+            @foreach (var brand in brands)
+            {
+                <option value="@brand.Id" selected="@(brand.Id == selectedBrandId)">@brand.Name</option>
+            }
+        </select>
+    </div>
+    <div class="col-auto">
+        <button type="submit" class="btn btn-outline-primary">Filter</button>
+    </div>
+</form>
+
+<table class="table table-hover align-middle">
+    <thead>
+        <tr><th>Name</th><th>SKU</th><th>Brand</th><th>Price</th><th>Status</th><th></th></tr>
+    </thead>
+    <tbody>
+        @foreach (var product in Model.Items)
+        {
+            <tr>
+                <td>@product.Name @(product.IsFeatured ? "★" : "")</td>
+                <td class="text-muted small">@product.BaseSKU</td>
+                <td>@(product.BrandName ?? "-")</td>
+                <td>@product.SellingPrice.ToString("0.00")</td>
+                <td>
+                    @if (product.IsPublished)
+                    {
+                        <span class="badge text-bg-success">Published</span>
+                    }
+                    else
+                    {
+                        <span class="badge text-bg-secondary">Draft</span>
+                    }
+                    @if (!product.IsActive)
+                    {
+                        <span class="badge text-bg-warning">Inactive</span>
+                    }
+                </td>
+                <td class="text-end">
+                    <a asp-action="Edit" asp-route-id="@product.Id" class="btn btn-sm btn-outline-secondary">Edit</a>
+                    @if (product.IsActive)
+                    {
+                        <form asp-action="Deactivate" asp-route-id="@product.Id" method="post" class="d-inline">
+                            <button type="submit" class="btn btn-sm btn-outline-warning">Deactivate</button>
+                        </form>
+                    }
+                    else
+                    {
+                        <form asp-action="Activate" asp-route-id="@product.Id" method="post" class="d-inline">
+                            <button type="submit" class="btn btn-sm btn-outline-success">Activate</button>
+                        </form>
+                    }
+                    <form asp-action="Delete" asp-route-id="@product.Id" method="post" class="d-inline"
+                          onsubmit="return confirm('Delete this product?');">
+                        <button type="submit" class="btn btn-sm btn-outline-danger">Delete</button>
+                    </form>
+                </td>
+            </tr>
+        }
+        @if (Model.Items.Count == 0)
+        {
+            <tr><td colspan="6" class="text-center text-muted py-4">No products found.</td></tr>
+        }
+    </tbody>
+</table>
+
+@if (Model.TotalPages > 1)
+{
+    <nav>
+        <ul class="pagination">
+            @for (var i = 1; i <= Model.TotalPages; i++)
+            {
+                <li class="page-item @(i == Model.Page ? "active" : "")">
+                    <a class="page-link" asp-action="Index" asp-route-page="@i" asp-route-search="@search">@i</a>
+                </li>
+            }
+        </ul>
+    </nav>
+}

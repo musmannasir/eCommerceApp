@@ -66,6 +66,47 @@ classlib doesn't reference by default - `ECommerceApp.Infrastructure.csproj`
 adds `<FrameworkReference Include="Microsoft.AspNetCore.App" />` for this.
 Web still owns the actual HTTP pipeline/middleware configuration.
 
+## Catalog service pattern and file storage (Milestone 2)
+
+`CategoryService`/`BrandService`/`ProductAttributeService`/`ProductService`
+follow the same shape as `AuthService`: declared as interfaces in
+Application, implemented in Infrastructure directly against
+`ApplicationDbContext` (no separate repository layer - a repository
+abstraction over EF Core, which is already a repository/unit-of-work
+abstraction, would be indirection with no payoff here).
+
+Image uploads go through `IFileStorage` (Application interface),
+implemented by `LocalFileStorage` (Infrastructure) which writes to
+`wwwroot/uploads/{category}/{random-guid}.{ext}`. The stored extension and
+content-type are derived from the file's **signature** (magic bytes via
+`ImageSignatureDetector`), never from the caller-supplied filename or
+`Content-Type` header - both are trivially spoofable, and the brief requires
+real content validation, not just extension checking. Filenames are always
+random, and `DeleteAsync` only ever touches paths under `/uploads/`.
+
+## A materialization bug this milestone's manual testing caught
+
+`ProductService.AddVariantAsync` re-queried the just-created variant with
+`.Select(v => MapVariant(v))` directly against `IQueryable<ProductVariant>`.
+`MapVariant` is a plain C# method - EF Core can't translate it to SQL, and
+without an explicit `.Include()` chain for
+`AttributeValues.ProductAttributeValue.ProductAttribute`, those navigations
+were null, throwing `NullReferenceException` (visible as a 500 from the
+Admin UI). The `Infrastructure.Tests` unit test for this exact path (against
+the EF Core InMemory provider) **passed anyway**, because the test reused one
+`DbContext` across several calls in the same test, and EF's change-tracker
+identity-fixup silently wired up the navigations from entities already
+tracked earlier in the test - something a real, per-request `DbContext`
+scope never benefits from. Fixed by explicitly `.Include()`-ing the chain
+before calling `MapVariant`, and covered by a real end-to-end integration
+test (`ProductAdminFlowTests`) that drives the actual Admin UI over HTTP
+against the real SQL Server test database, not the InMemory harness.
+
+Lesson generalized: a passing InMemory-backed unit test is not proof that a
+projection or navigation chain works against a real relational provider -
+prefer the real test database (or at least a fresh, untracked `DbContext`
+per operation) for anything that depends on `.Include()` being right.
+
 ## Framework version note
 
 The brief fixes the stack at **.NET 8**. This machine has only the **.NET 10**

@@ -14,13 +14,17 @@
 <body class="admin-body">
     <nav class="navbar navbar-dark bg-dark px-3">
         <a class="navbar-brand" asp-area="Admin" asp-controller="Home" asp-action="Index">@storeName &mdash; Admin</a>
-        <span class="navbar-text text-white-50" aria-disabled="true">Signed-in admin (Milestone 1)</span>
+        <span class="navbar-text text-white-50" aria-disabled="true">Signed in</span>
     </nav>
     <div class="d-flex admin-shell">
         <aside class="admin-sidebar bg-light border-end">
             <ul class="nav flex-column py-3">
                 <li class="nav-item"><a class="nav-link" asp-area="Admin" asp-controller="Home" asp-action="Index">Dashboard</a></li>
-                <li class="nav-item"><span class="nav-link disabled" aria-disabled="true">Catalog</span></li>
+                <li class="nav-item px-3 pt-2 pb-1 small text-muted text-uppercase">Catalog</li>
+                <li class="nav-item"><a class="nav-link" asp-area="Admin" asp-controller="Categories" asp-action="Index">Categories</a></li>
+                <li class="nav-item"><a class="nav-link" asp-area="Admin" asp-controller="Brands" asp-action="Index">Brands</a></li>
+                <li class="nav-item"><a class="nav-link" asp-area="Admin" asp-controller="Products" asp-action="Index">Products</a></li>
+                <li class="nav-item"><a class="nav-link" asp-area="Admin" asp-controller="ProductAttributes" asp-action="Index">Attributes</a></li>
                 <li class="nav-item"><span class="nav-link disabled" aria-disabled="true">Inventory</span></li>
                 <li class="nav-item"><span class="nav-link disabled" aria-disabled="true">Orders</span></li>
                 <li class="nav-item"><span class="nav-link disabled" aria-disabled="true">Customers</span></li>
