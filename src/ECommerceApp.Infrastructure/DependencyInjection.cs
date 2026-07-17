@@ -1,12 +1,15 @@
 using ECommerceApp.Application.Auth;
+using ECommerceApp.Application.Catalog;
 using ECommerceApp.Application.Common.Interfaces;
 using ECommerceApp.Application.Common.Options;
+using ECommerceApp.Infrastructure.Catalog;
 using ECommerceApp.Infrastructure.Common;
 using ECommerceApp.Infrastructure.Email;
 using ECommerceApp.Infrastructure.HealthChecks;
 using ECommerceApp.Infrastructure.Identity;
 using ECommerceApp.Infrastructure.Persistence;
 using ECommerceApp.Infrastructure.Security;
+using ECommerceApp.Infrastructure.Storage;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
@@ -68,6 +71,13 @@ public static class DependencyInjection
         services.AddScoped<IAuthService, AuthService>();
         services.AddScoped<RoleAndAdminSeeder>();
         services.AddSingleton<IEmailSender, DevEmailSender>();
+
+        services.Configure<FileStorageOptions>(configuration.GetSection("FileStorage"));
+        services.AddSingleton<IFileStorage, LocalFileStorage>();
+        services.AddScoped<ICategoryService, CategoryService>();
+        services.AddScoped<IBrandService, BrandService>();
+        services.AddScoped<IProductAttributeService, ProductAttributeService>();
+        services.AddScoped<IProductService, ProductService>();
 
         return services;
     }

@@ -1,5 +1,29 @@
 # Security
 
+## Status after Milestone 2
+
+Catalog administration (Categories, Brands, Products, Product Attributes) is
+gated by the `CanManageCatalog` policy (`SuperAdmin`/`Admin`/`CatalogManager`
+roles) - anonymous requests redirect to login, authenticated non-catalog
+roles (e.g. `Customer`) get a 403 Access Denied, verified by
+`CatalogAuthorizationTests`.
+
+## File upload security (Milestone 2)
+
+- Allowed types: JPEG, PNG, WebP - determined from the file's **signature**
+  (first bytes), never the client-supplied filename extension or
+  `Content-Type` header, both of which are trivial to spoof. See
+  `ImageSignatureDetector` and `Architecture.md`.
+- Size limit is configurable (`FileStorage:MaxImageSizeBytes`, default 5 MB)
+  and enforced by counting bytes while copying, not by trusting a
+  `Content-Length` header.
+- Stored filenames are always a random GUID plus the *detected* extension -
+  the original filename is never used to construct a path, eliminating
+  directory traversal via a crafted filename.
+- `IFileStorage.DeleteAsync` refuses to touch any path outside `/uploads/`.
+- Orphaned files (an image record deleted from the DB) are deleted from disk
+  in the same operation (`ProductService.DeleteImageAsync`).
+
 ## Status after Milestone 1
 
 Authentication and authorization are implemented. The Admin Area

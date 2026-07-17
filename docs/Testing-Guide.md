@@ -6,9 +6,9 @@
 |---|---|
 | `tests/ECommerceApp.Domain.Tests` | Pure unit tests for domain entities, value objects, and `Result`/`Error`. No I/O. |
 | `tests/ECommerceApp.Application.Tests` | Unit tests for FluentValidation validators (`RegisterRequestValidator`, `ChangePasswordRequestValidator`, etc.). |
-| `tests/ECommerceApp.Infrastructure.Tests` | EF Core behavior tests (InMemory provider) plus `AuthService` tests against a real Identity stack (`UserManager`/`SignInManager`/`RoleManager`) backed by InMemory - see `AuthServiceTestHarness`. Covers registration, login/lockout, refresh-token rotation/expiry/revocation/reuse, logout, revoke-all-sessions, forgot/reset/change password. |
+| `tests/ECommerceApp.Infrastructure.Tests` | EF Core behavior tests (InMemory provider), `AuthService` tests against a real Identity stack (`UserManager`/`SignInManager`/`RoleManager`) backed by InMemory - see `AuthServiceTestHarness` - and catalog service tests (`CatalogTestHarness`) covering Category/Brand/Product/variant creation, duplicate slugs/SKUs/combinations, circular category parents, soft delete, pagination, and publication rules. Plus `LocalFileStorageTests` (real disk I/O) and `ImageSignatureDetectorTests` (magic-byte detection). |
 | `tests/ECommerceApp.Web.Tests` | Unit tests for controllers, services, and middleware in isolation (no real HTTP host). |
-| `tests/ECommerceApp.IntegrationTests` | Architecture/dependency-rule tests, full-pipeline smoke tests, and (from Milestone 1) full-stack auth tests against a real SQL Server test database via `WebApplicationFactory<Program>` - admin-area authorization, open-redirect protection, the JWT API surface, and the MVC change-password flow. |
+| `tests/ECommerceApp.IntegrationTests` | Architecture/dependency-rule tests, full-pipeline smoke tests, and full-stack tests against a real SQL Server test database via `WebApplicationFactory<Program>` - admin-area authorization (auth and catalog), open-redirect protection, the JWT API surface, the MVC change-password flow, RowVersion concurrency conflicts, and a complete "create a product through the Admin UI" flow (`ProductAdminFlowTests`). |
 
 ## Running tests
 
@@ -38,6 +38,32 @@ dotnet test --collect:"XPlat Code Coverage" --results-directory ./TestResults
 - From Milestone 18 onward, the full test-database bootstrap must also
   actively reject any connection string that looks like the dev or
   production database name.
+
+## Manual curl testing vs. automated HttpClient tests (Milestone 2)
+
+Manually driving the running app with `curl` + shell pipelines produced two
+false alarms this milestone that automated `HttpClient`-based tests
+immediately disproved:
+
+1. Extracting the antiforgery token with plain `grep` (which returns *all*
+   matches) silently concatenated two tokens with a newline whenever a page
+   rendered more than one antiforgery-protected form (e.g. the "new
+   attribute" form plus one "add value" form per existing attribute) -
+   always a 400. `HtmlHelpers.ExtractAntiForgeryToken` (C#, `Regex.Match`,
+   first match only) doesn't have this problem. Fix: pipe through `head -1`
+   before extracting the value in shell, or just trust an automated test
+   over a curl chain when they disagree.
+2. `HttpResponseMessage.RequestMessage.RequestUri` does not reliably reflect
+   the final URL after auto-redirect through `WebApplicationFactory`'s
+   in-process `TestServer` - read the `Location` header directly off the
+   redirect response instead (with `AllowAutoRedirect = false`) when a test
+   needs to recover a newly-created entity's id.
+
+Neither was an application bug. The moral isn't "don't test manually" - it's
+that a manual curl session and an automated `HttpClient` test can disagree,
+and when they do, the automated test (which doesn't accumulate shell/grep
+footguns) is the one to trust; write it before spending more time on the
+curl side.
 
 ## A real bug this milestone's tests caught
 

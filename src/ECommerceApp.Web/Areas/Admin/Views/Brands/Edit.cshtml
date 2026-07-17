@@ -1,0 +1,38 @@
+@model BrandFormViewModel
+@{
+    ViewData["Title"] = "Edit brand";
+}
+
+<h1 class="h3 mb-4">Edit brand</h1>
+
+@if (TempData["Error"] is string error)
+{
+    <div class="alert alert-danger">@error</div>
+}
+
+<div class="row">
+    <div class="col-md-8">
+        <form asp-action="Edit" method="post">
+            @await Html.PartialAsync("_Form", Model)
+        </form>
+    </div>
+    <div class="col-md-4">
+        <div class="card">
+            <div class="card-body">
+                <h2 class="h6">Logo</h2>
+                @if (!string.IsNullOrEmpty(Model.LogoPath))
+                {
+                    <img src="@Model.LogoPath" alt="@Model.Name logo" class="img-fluid mb-2" style="max-height:120px" />
+                }
+                else
+                {
+                    <p class="text-muted small">No logo uploaded yet.</p>
+                }
+                <form asp-action="UploadLogo" asp-route-id="@Model.Id" method="post" enctype="multipart/form-data">
+                    <input type="file" name="file" class="form-control mb-2" accept=".jpg,.jpeg,.png,.webp" required />
+                    <button type="submit" class="btn btn-outline-primary btn-sm">Upload</button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>

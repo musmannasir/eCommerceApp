@@ -1,0 +1,11 @@
+@model IReadOnlyList<CategoryTreeNodeDto>
+@{
+    ViewData["Title"] = "Category tree";
+}
+
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h1 class="h3 mb-0">Category tree</h1>
+    <a asp-action="Index" class="btn btn-outline-secondary">List view</a>
+</div>
+
+@await Html.PartialAsync("_TreeNodes", Model)

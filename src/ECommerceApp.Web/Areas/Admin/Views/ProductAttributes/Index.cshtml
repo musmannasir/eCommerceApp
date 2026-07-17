@@ -1,0 +1,59 @@
+@model IReadOnlyList<ProductAttributeDto>
+@{
+    ViewData["Title"] = "Product attributes";
+}
+
+<h1 class="h3 mb-4">Product attributes</h1>
+<p class="text-muted">Define reusable attributes (Color, Size, Storage, etc.) and their values here, then use them when adding variants to a product.</p>
+
+@if (TempData["Error"] is string error)
+{
+    <div class="alert alert-danger">@error</div>
+}
+
+<div class="card mb-4">
+    <div class="card-body">
+        <h2 class="h6">New attribute</h2>
+        <form asp-action="CreateAttribute" method="post" class="row g-2">
+            <div class="col-auto">
+                <input type="text" name="Name" class="form-control" placeholder="e.g. Color" required maxlength="100" />
+            </div>
+            <div class="col-auto">
+                <button type="submit" class="btn btn-primary">Add attribute</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+@foreach (var productAttribute in Model)
+{
+    <div class="card mb-3">
+        <div class="card-body">
+            <h2 class="h6">@productAttribute.Name</h2>
+            <div class="mb-2">
+                @foreach (var attributeValue in productAttribute.Values)
+                {
+                    <span class="badge text-bg-light border me-1">@attributeValue.Value</span>
+                }
+                @if (productAttribute.Values.Count == 0)
+                {
+                    <span class="text-muted small">No values yet.</span>
+                }
+            </div>
+            <form asp-action="CreateValue" method="post" class="row g-2">
+                <input type="hidden" name="ProductAttributeId" value="@productAttribute.Id" />
+                <div class="col-auto">
+                    <input type="text" name="Value" class="form-control form-control-sm" placeholder="e.g. Red" required maxlength="100" />
+                </div>
+                <div class="col-auto">
+                    <button type="submit" class="btn btn-outline-primary btn-sm">Add value</button>
+                </div>
+            </form>
+        </div>
+    </div>
+}
+
+@if (Model.Count == 0)
+{
+    <p class="text-muted">No attributes defined yet.</p>
+}

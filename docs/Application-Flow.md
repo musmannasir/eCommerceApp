@@ -1,8 +1,9 @@
 # Application Flow
 
-## Status after Milestone 1
+## Status after Milestone 2
 
-No catalog/cart/checkout flows exist yet (Milestones 2+). What's live today:
+No storefront/cart/checkout flows exist yet (Milestone 4+) - Milestone 2 is
+Admin-only catalog management. What's live today:
 
 ### Public / customer-facing (MVC, cookie auth)
 
@@ -33,6 +34,10 @@ No catalog/cart/checkout flows exist yet (Milestones 2+). What's live today:
   `CustomerSupport` (`Roles.StaffRolesCsv`); anonymous requests redirect to
   login, authenticated non-staff (e.g. `Customer`) get redirected to
   `/Home/AccessDenied` (403).
+- `/Admin/Categories`, `/Admin/Brands`, `/Admin/ProductAttributes`,
+  `/Admin/Products` - full catalog CRUD, gated by the `CanManageCatalog`
+  policy (`SuperAdmin`/`Admin`/`CatalogManager`). See `Admin-User-Guide.md`
+  for the full feature list.
 
 ### API (`/api/v1/auth`, JWT bearer)
 

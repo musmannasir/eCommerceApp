@@ -1,4 +1,5 @@
 using ECommerceApp.Application.Common.Interfaces;
+using ECommerceApp.Domain.Catalog;
 using ECommerceApp.Domain.Common;
 using ECommerceApp.Domain.Security;
 using ECommerceApp.Infrastructure.Identity;
@@ -33,6 +34,18 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser, IdentityR
     public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();
     public DbSet<UserSession> UserSessions => Set<UserSession>();
     public DbSet<SecurityAuditEvent> SecurityAuditEvents => Set<SecurityAuditEvent>();
+
+    public DbSet<Category> Categories => Set<Category>();
+    public DbSet<Brand> Brands => Set<Brand>();
+    public DbSet<Product> Products => Set<Product>();
+    public DbSet<ProductTag> ProductTags => Set<ProductTag>();
+    public DbSet<ProductTagMapping> ProductTagMappings => Set<ProductTagMapping>();
+    public DbSet<ProductImage> ProductImages => Set<ProductImage>();
+    public DbSet<ProductAttribute> ProductAttributes => Set<ProductAttribute>();
+    public DbSet<ProductAttributeValue> ProductAttributeValues => Set<ProductAttributeValue>();
+    public DbSet<ProductVariant> ProductVariants => Set<ProductVariant>();
+    public DbSet<ProductVariantAttributeValue> ProductVariantAttributeValues => Set<ProductVariantAttributeValue>();
+    public DbSet<ProductSpecification> ProductSpecifications => Set<ProductSpecification>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -71,12 +84,23 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser, IdentityR
             entity.HasIndex(e => e.OccurredAtUtc);
         });
 
+        modelBuilder.ApplyConfigurationsFromAssembly(typeof(ApplicationDbContext).Assembly);
+
         foreach (var entityType in modelBuilder.Model.GetEntityTypes())
         {
             if (typeof(ISoftDeletable).IsAssignableFrom(entityType.ClrType))
             {
                 modelBuilder.Entity(entityType.ClrType)
                     .HasQueryFilter(SoftDeleteFilterFactory.Build(entityType.ClrType));
+            }
+
+            // Without this, RowVersion is just an ordinary byte[] column - SQL Server never
+            // updates it and EF Core never checks it, so optimistic concurrency silently does
+            // nothing. IsRowVersion() makes it a real SQL Server `rowversion` column and a
+            // concurrency token EF checks on every UPDATE/DELETE.
+            if (typeof(IHasRowVersion).IsAssignableFrom(entityType.ClrType))
+            {
+                modelBuilder.Entity(entityType.ClrType).Property(nameof(IHasRowVersion.RowVersion)).IsRowVersion();
             }
         }
     }

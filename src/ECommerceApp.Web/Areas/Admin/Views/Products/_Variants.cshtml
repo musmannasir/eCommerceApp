@@ -1,0 +1,91 @@
+@model ProductEditViewModel
+@{
+    var product = Model.Product;
+}
+
+<table class="table table-sm align-middle">
+    <thead><tr><th>SKU</th><th>Combination</th><th>Price</th><th>Status</th><th></th></tr></thead>
+    <tbody>
+        @foreach (var variant in product.Variants)
+        {
+            <tr>
+                <td>@variant.SKU</td>
+                <td>@string.Join(", ", variant.AttributeValues.Select(v => $"{v.ProductAttributeName}: {v.Value}"))</td>
+                <td>@(variant.SellingPrice?.ToString("0.00") ?? "(uses product price)")</td>
+                <td>@(variant.IsActive ? "Active" : "Inactive")</td>
+                <td class="text-end">
+                    <form asp-action="DeleteVariant" asp-route-variantId="@variant.Id" asp-route-productId="@product.Id" method="post"
+                          onsubmit="return confirm('Delete this variant?');">
+                        <button type="submit" class="btn btn-sm btn-outline-danger">Delete</button>
+                    </form>
+                </td>
+            </tr>
+        }
+        @if (product.Variants.Count == 0)
+        {
+            <tr><td colspan="5" class="text-muted">No variants yet.</td></tr>
+        }
+    </tbody>
+</table>
+
+<div class="card">
+    <div class="card-body">
+        <h2 class="h6">Add variant</h2>
+        @if (Model.Attributes.Count == 0)
+        {
+            <p class="text-muted small">
+                No attributes defined yet. Create attributes and values on the
+                <a asp-controller="ProductAttributes" asp-action="Index">Attributes</a> page first.
+            </p>
+        }
+        else
+        {
+            <form asp-action="AddVariant" method="post" class="row g-3">
+                <input type="hidden" name="ProductId" value="@product.Id" />
+                <div class="col-md-3">
+                    <label class="form-label">SKU</label>
+                    <input type="text" name="SKU" class="form-control" required maxlength="100" />
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label">Barcode</label>
+                    <input type="text" name="Barcode" class="form-control" maxlength="100" />
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label">Selling price override</label>
+                    <input type="number" step="0.01" name="SellingPrice" class="form-control" />
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label">Compare-at override</label>
+                    <input type="number" step="0.01" name="CompareAtPrice" class="form-control" />
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label">Weight override</label>
+                    <input type="number" step="0.001" name="Weight" class="form-control" />
+                </div>
+
+                <div class="col-12">
+                    <label class="form-label">Attribute combination (pick one value per attribute)</label>
+                    <div class="row">
+                        @foreach (var productAttribute in Model.Attributes)
+                        {
+                            <div class="col-md-3 mb-2">
+                                <div class="fw-semibold small">@productAttribute.Name</div>
+                                @foreach (var value in productAttribute.Values)
+                                {
+                                    <div class="form-check">
+                                        <input type="checkbox" name="AttributeValueIds" value="@value.Id" class="form-check-input" id="av-@value.Id" />
+                                        <label class="form-check-label" for="av-@value.Id">@value.Value</label>
+                                    </div>
+                                }
+                            </div>
+                        }
+                    </div>
+                </div>
+
+                <div class="col-12">
+                    <button type="submit" class="btn btn-primary">Add variant</button>
+                </div>
+            </form>
+        }
+    </div>
+</div>

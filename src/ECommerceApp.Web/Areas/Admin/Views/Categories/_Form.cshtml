@@ -1,0 +1,46 @@
+@model CategoryFormViewModel
+
+<input type="hidden" asp-for="Id" />
+<div asp-validation-summary="ModelOnly"></div>
+
+<div class="mb-3">
+    <label asp-for="Name" class="form-label"></label>
+    <input asp-for="Name" class="form-control" />
+    <span asp-validation-for="Name" class="text-danger small"></span>
+</div>
+
+<div class="mb-3">
+    <label asp-for="Slug" class="form-label"></label>
+    <input asp-for="Slug" class="form-control" placeholder="Auto-generated from name if left blank" />
+</div>
+
+<div class="mb-3">
+    <label asp-for="Description" class="form-label"></label>
+    <textarea asp-for="Description" class="form-control" rows="3"></textarea>
+</div>
+
+<div class="row">
+    <div class="col-md-6 mb-3">
+        <label asp-for="ParentCategoryId" class="form-label"></label>
+        <select asp-for="ParentCategoryId" class="form-select"
+                asp-items="@(new SelectList(Model.AvailableParents, nameof(CategoryDto.Id), nameof(CategoryDto.Name)))">
+            <option value="">-- None (top level) --</option>
+        </select>
+    </div>
+    <div class="col-md-6 mb-3">
+        <label asp-for="DisplayOrder" class="form-label"></label>
+        <input asp-for="DisplayOrder" class="form-control" type="number" />
+    </div>
+</div>
+
+<div class="mb-3 form-check">
+    <input asp-for="IsActive" class="form-check-input" />
+    <label asp-for="IsActive" class="form-check-label"></label>
+</div>
+<div class="mb-3 form-check">
+    <input asp-for="IsFeatured" class="form-check-input" />
+    <label asp-for="IsFeatured" class="form-check-label"></label>
+</div>
+
+<button type="submit" class="btn btn-primary">Save</button>
+<a asp-action="Index" class="btn btn-outline-secondary">Cancel</a>

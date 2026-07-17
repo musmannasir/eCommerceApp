@@ -29,4 +29,8 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
 
+  <ItemGroup>
+    <InternalsVisibleTo Include="ECommerceApp.Infrastructure.Tests" />
+  </ItemGroup>
+
 </Project>
