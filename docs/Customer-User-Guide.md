@@ -1,11 +1,14 @@
 # Customer User Guide
 
-## What you can do today (after Milestone 4.3)
+## What you can do today (after Milestone 6.3)
 
 - **Create an account**: go to *Register*, fill in your name/email/password.
-  You're signed in immediately afterward.
+  You're signed in immediately afterward. If you had anything in your cart
+  as a guest, it comes with you.
 - **Log in / out**: use *Log in* in the top navigation; *Log out* signs you
-  out of this device.
+  out of this device. Logging in also folds in anything you added to your
+  cart as a guest, combining it with whatever's already in your account's
+  cart.
 - **Forgot your password?**: use the link on the login page. If an account
   exists for that email, you'll get a reset link (in development, this is
   written to a local preview file instead of a real email - see the README).
@@ -20,9 +23,10 @@
 - **Home page**: hero banners, featured categories/products, new arrivals,
   and discounted products (all admin-managed or drawn from real catalog
   data - see `Admin-User-Guide.md`'s Marketing section for how banners are
-  configured). "Best sellers," "Recommended for you," and "Recently viewed"
-  are placeholders for now (they need order history and browsing history
-  from later milestones).
+  configured), plus a **Recently viewed** section once you've looked at a
+  product. "Best sellers" and "Recommended for you" are still placeholders
+  for now - they need order history from a later milestone, or (for a
+  home-page recommendation) a signal the store doesn't have yet.
 - **Category pages** (linked from the header nav or a featured-category
   card): shows every product in that category, including its subcategories.
 - **Brand pages**: linked from any product card's brand name, or from the
@@ -45,8 +49,84 @@
 - **All of the above**: switch between grid and list view, page through
   results, and clear the current category/brand/search filter with the "×"
   next to its label if you want to go back to browsing everything.
-- Products themselves aren't clickable yet - product detail pages (full
-  description, variant selection, reviews) arrive in Milestone 5.
 
-Cart, wishlist, checkout, and order tracking arrive in later milestones
-(6 onward).
+### Viewing a product
+
+Click any product card to open its detail page:
+
+- **Gallery**: click the main image to zoom in; click a thumbnail to swap
+  the main image.
+- **Price**: selling price, a struck-through compare-at price and discount
+  percentage when the product is on sale, and a note on whether tax applies.
+- **Stock**: In Stock, Low Stock (with how many are left), Available on
+  Backorder, or Out of Stock.
+- **Options** (Color, Size, etc., if the product has them): pick a value for
+  each and the page updates instantly - no reload - to that exact variant's
+  SKU, price, and stock. Options that can't be combined with what you've
+  already picked (because no such variant exists) are automatically greyed
+  out, so you can't select an invalid combination in the first place. If you
+  land on the page via a link/bookmark for a combination that isn't
+  available, you'll see a note and the closest match instead.
+- **Quantity and Add to Cart**: pick a quantity and click Add to Cart - it's
+  added right away without leaving the page, and the Cart icon in the header
+  updates to show how many items you have.
+- **Add to Wishlist**: click to save the product for later - the button
+  fills in to show it's saved, and clicking it again removes it. This
+  requires an account (unlike Cart, which works for guests too); if you're
+  not signed in, it takes you to the login page first.
+- **Description, Specifications, Warranty/Returns/Shipping, Reviews** tabs.
+  Reviews aren't built yet (Milestone 12), so that tab says so honestly
+  rather than showing fake ratings.
+- **Related products**: other products picked for you based on category,
+  brand, shared tags, and similar price - not just "same category" anymore.
+- **Recently viewed**: products you've looked at, most recent first, shown
+  further down the page and on the home page. Signed out, this is remembered
+  in a cookie on your device for 90 days; signed in, it's tied to your
+  account instead, so it follows you between devices.
+- "Frequently bought together" is still a placeholder - it needs real order
+  history (Milestone 9) that doesn't exist yet.
+
+### Your Cart
+
+Click **Cart** in the header (it shows a badge with your item count once you
+have anything in it) to see everything you've added:
+
+- Each line shows the product, its selected option (if any), price, and a
+  quantity you can change - just edit the number and it updates right away.
+- **Remove** takes an item out entirely; **Clear cart** empties it.
+- If you try to set a quantity higher than what's in stock, you'll see a
+  message telling you how many are actually available.
+- If something you added is no longer available (discontinued, out of
+  stock with no backorder, etc.), it still shows in your cart so you know
+  what happened, but it's excluded from your subtotal and can only be
+  removed, not adjusted.
+- If a price changes after you've added something (a sale starts or ends,
+  for instance), you'll see a note showing the old and new price - you're
+  always charged the current price, never a stale one.
+- If stock runs low after you've added something (someone else bought the
+  last few), you'll see a note telling you how many are actually available
+  now, so you can adjust the quantity yourself before it becomes a problem
+  at checkout.
+- You don't need an account to use the cart - as a guest, it's remembered
+  on your device for 30 days. If you log in, your cart follows your account
+  instead, the same way recently-viewed does - and if you already had items
+  in your account's cart from a previous visit, anything from your guest
+  session is added alongside them rather than replacing them.
+- **Checkout** isn't available yet - that arrives in a later milestone.
+
+### Your Wishlist
+
+Click **Wishlist** in the header (it shows a badge with your item count) to
+see everything you've saved. This requires an account - it's not available
+as a guest, since a wishlist is meant to follow you across visits and
+devices, not just sit in a cookie on one browser.
+
+- Each saved product shows its card, just like elsewhere on the site.
+- **Remove** takes it off your wishlist.
+- Toggle it on/off directly from any product's detail page too - no need to
+  come back here to manage it.
+- If something you saved is no longer available (discontinued, etc.), it
+  just quietly disappears from the list rather than cluttering it with
+  something you can't act on.
+
+Checkout and order tracking arrive in later milestones (7 onward).

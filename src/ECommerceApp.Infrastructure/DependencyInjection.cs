@@ -1,10 +1,14 @@
 using ECommerceApp.Application.Auth;
+using ECommerceApp.Application.Carts;
 using ECommerceApp.Application.Catalog;
 using ECommerceApp.Application.Common.Interfaces;
 using ECommerceApp.Application.Common.Options;
 using ECommerceApp.Application.Inventory;
 using ECommerceApp.Application.Marketing;
+using ECommerceApp.Application.Pricing;
 using ECommerceApp.Application.Storefront;
+using ECommerceApp.Application.Wishlist;
+using ECommerceApp.Infrastructure.Carts;
 using ECommerceApp.Infrastructure.Catalog;
 using ECommerceApp.Infrastructure.Common;
 using ECommerceApp.Infrastructure.Email;
@@ -13,9 +17,11 @@ using ECommerceApp.Infrastructure.Identity;
 using ECommerceApp.Infrastructure.Inventory;
 using ECommerceApp.Infrastructure.Marketing;
 using ECommerceApp.Infrastructure.Persistence;
+using ECommerceApp.Infrastructure.Pricing;
 using ECommerceApp.Infrastructure.Security;
 using ECommerceApp.Infrastructure.Storage;
 using ECommerceApp.Infrastructure.Storefront;
+using ECommerceApp.Infrastructure.Wishlist;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
@@ -90,6 +96,11 @@ public static class DependencyInjection
         services.AddScoped<IHomePageBannerService, HomePageBannerService>();
         services.AddScoped<IHomePageService, HomePageService>();
         services.AddScoped<ICatalogBrowseService, CatalogBrowseService>();
+        services.AddScoped<IProductDetailService, ProductDetailService>();
+        services.AddScoped<IRecommendationService, RecommendationService>();
+        services.AddSingleton<IPricingService, PricingService>();
+        services.AddScoped<ICartService, CartService>();
+        services.AddScoped<IWishlistService, WishlistService>();
 
         return services;
     }

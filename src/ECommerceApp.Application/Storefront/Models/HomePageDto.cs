@@ -26,4 +26,5 @@ public record HomePageDto(
     IReadOnlyList<HomeCategoryCardDto> FeaturedCategories,
     IReadOnlyList<HomeProductCardDto> FeaturedProducts,
     IReadOnlyList<HomeProductCardDto> NewArrivals,
-    IReadOnlyList<HomeProductCardDto> DiscountedProducts);
+    IReadOnlyList<HomeProductCardDto> DiscountedProducts,
+    IReadOnlyList<HomeProductCardDto> RecentlyViewed);

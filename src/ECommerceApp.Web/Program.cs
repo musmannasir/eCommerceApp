@@ -3,6 +3,7 @@ using System.Threading.RateLimiting;
 using ECommerceApp.Application;
 using ECommerceApp.Application.Common.Interfaces;
 using ECommerceApp.Application.Common.Options;
+using ECommerceApp.Application.Storefront;
 using ECommerceApp.Domain.Security;
 using ECommerceApp.Infrastructure;
 using ECommerceApp.Infrastructure.Security;
@@ -35,9 +36,16 @@ try
     builder.Services.AddHttpContextAccessor();
     builder.Services.AddMemoryCache();
 
+    // Cart's Add/UpdateQuantity/Remove/Clear endpoints are AJAX (JSON body), not
+    // a posted <form>, so the token has to travel as a request header instead of
+    // a form field - the client reads it from the meta tag _Layout.cshtml emits.
+    builder.Services.AddAntiforgery(options => options.HeaderName = "X-CSRF-TOKEN");
+
     builder.Services.AddApplication();
     builder.Services.AddInfrastructure(builder.Configuration);
     builder.Services.AddScoped<ICurrentUserService, CurrentUserService>();
+    builder.Services.AddScoped<IRecentlyViewedService, RecentlyViewedService>();
+    builder.Services.AddScoped<ICartOwnerAccessor, CartOwnerAccessor>();
 
     builder.Services.AddProblemDetails();
     builder.Services.AddExceptionHandler<ApiExceptionHandler>();
@@ -89,6 +97,23 @@ try
         options.Cookie.SecurePolicy = builder.Environment.IsDevelopment()
             ? CookieSecurePolicy.SameAsRequest
             : CookieSecurePolicy.Always;
+
+        // Without this, an unauthenticated fetch() (e.g. Wishlist's AJAX
+        // endpoints, Milestone 6.3) would get a 302 to the login page that
+        // fetch() silently follows, landing on login HTML with a misleading
+        // 200 instead of a status the client-side JS can actually detect.
+        var defaultRedirectToLogin = options.Events.OnRedirectToLogin;
+        options.Events.OnRedirectToLogin = context =>
+        {
+            if (context.Request.Headers.Accept.Any(a => a?.Contains("application/json") == true) ||
+                context.Request.Headers.XRequestedWith == "XMLHttpRequest")
+            {
+                context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+                return Task.CompletedTask;
+            }
+
+            return defaultRedirectToLogin(context);
+        };
     });
 
     // Shortened from the 30-minute default so RevokeAllSessionsAsync's security-stamp bump

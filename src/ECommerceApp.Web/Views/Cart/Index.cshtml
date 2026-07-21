@@ -1,0 +1,114 @@
+@using ECommerceApp.Application.Storefront.Models
+@model ECommerceApp.Application.Carts.Models.CartDto
+@{
+    ViewData["Title"] = "Your Cart";
+}
+
+<h1 class="h3 mb-4">Your Cart</h1>
+
+@if (Model.Items.Count == 0)
+{
+    <p class="text-muted">Your cart is empty. <a asp-controller="Catalog" asp-action="Index">Continue shopping</a>.</p>
+}
+else
+{
+    <div class="table-responsive">
+        <table class="table align-middle">
+            <thead>
+                <tr>
+                    <th>Product</th>
+                    <th>Price</th>
+                    <th style="width:140px">Quantity</th>
+                    <th class="text-end">Total</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var item in Model.Items)
+                {
+                    <tr class="cart-item @(item.IsAvailable ? "" : "opacity-50")" data-cart-item-id="@item.Id">
+                        <td>
+                            <div class="d-flex align-items-center gap-3">
+                                @if (!string.IsNullOrEmpty(item.ImagePath))
+                                {
+                                    <img src="@item.ImagePath" alt="@item.ProductName" style="width:64px;height:64px;object-fit:cover" class="rounded border" />
+                                }
+                                <div>
+                                    <a href="/Product/@item.ProductSlug" class="text-decoration-none text-reset fw-semibold">@item.ProductName</a>
+                                    @if (!string.IsNullOrEmpty(item.VariantDescription))
+                                    {
+                                        <div class="text-muted small">@item.VariantDescription</div>
+                                    }
+                                    <div class="text-muted small">SKU: @item.Sku</div>
+                                    @if (!item.IsAvailable)
+                                    {
+                                        <span class="badge text-bg-secondary">No longer available</span>
+                                    }
+                                    else if (item.StockState != ProductStockState.InStock)
+                                    {
+                                        switch (item.StockState)
+                                        {
+                                            case ProductStockState.LowStock:
+                                                <span class="badge text-bg-warning text-dark">Only @item.AvailableQuantity left</span>
+                                                break;
+                                            case ProductStockState.Backorder:
+                                                <span class="badge text-bg-info text-dark">Available on backorder</span>
+                                                break;
+                                            case ProductStockState.OutOfStock:
+                                                <span class="badge text-bg-secondary">Out of stock</span>
+                                                break;
+                                        }
+                                    }
+                                    @if (item.PriceChanged)
+                                    {
+                                        <div class="text-warning small">
+                                            Price changed since you added this - was @item.PreviousUnitPrice?.ToString("0.00"), now @item.UnitPrice.ToString("0.00").
+                                        </div>
+                                    }
+                                    @if (item.QuantityExceedsStock)
+                                    {
+                                        <div class="text-danger small">
+                                            You have @item.Quantity in your cart, but only @item.AvailableQuantity @(item.AvailableQuantity == 1 ? "is" : "are") available - please reduce the quantity.
+                                        </div>
+                                    }
+                                </div>
+                            </div>
+                        </td>
+                        <td>
+                            @item.UnitPrice.ToString("0.00")
+                            @if (item.CompareAtPrice.HasValue)
+                            {
+                                <span class="text-muted text-decoration-line-through small ms-1">@item.CompareAtPrice.Value.ToString("0.00")</span>
+                            }
+                        </td>
+                        <td>
+                            @if (item.IsAvailable)
+                            {
+                                <input type="number" min="1" value="@item.Quantity" class="form-control form-control-sm cart-quantity-input" style="width:80px" data-cart-item-id="@item.Id" />
+                            }
+                            else
+                            {
+                                <span class="text-muted">@item.Quantity</span>
+                            }
+                        </td>
+                        <td class="text-end">@item.LineTotal.ToString("0.00")</td>
+                        <td class="text-end">
+                            <button type="button" class="btn btn-sm btn-outline-danger cart-remove-button" data-cart-item-id="@item.Id">Remove</button>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+
+    <div class="d-flex justify-content-between align-items-start mt-4">
+        <button type="button" class="btn btn-outline-secondary" id="cartClearButton">Clear cart</button>
+        <div class="text-end">
+            <div class="fs-5">Subtotal: <strong>@Model.Subtotal.ToString("0.00")</strong></div>
+            <p class="text-muted small">Tax and shipping calculated at checkout.</p>
+            <button type="button" class="btn btn-primary" disabled title="Checkout arrives in a later milestone">Checkout</button>
+        </div>
+    </div>
+}
+
+<div class="alert alert-danger mt-3 d-none" id="cartPageError"></div>

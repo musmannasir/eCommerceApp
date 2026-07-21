@@ -1,0 +1,5 @@
+@model int
+<a class="nav-link position-relative" asp-controller="Cart" asp-action="Index" id="cartNavLink">
+    Cart
+    <span class="badge rounded-pill text-bg-primary @(Model > 0 ? "" : "d-none")" id="cartItemCount">@Model</span>
+</a>

@@ -1,13 +1,20 @@
 # Application Flow
 
-## Status after Milestone 4.3
+## Status after Milestone 6.3
 
-Cart/checkout/order flows don't exist yet (Milestone 6+); product detail
-pages are Milestone 5. Milestone 4 (Storefront Home, Navigation and Product
-Discovery) is now complete except for rating/best-selling filter and sort
-options, which have no backing data until Milestones 12 and 9 - see
-`Milestone-Status.md`'s "Deferred filter/sort options" note. What's live
-today:
+Checkout/order flows don't exist yet (Milestone 7+). Milestone 4
+(Storefront Home, Navigation and Product Discovery) is complete except for
+rating/best-selling filter and sort options, which have no backing data
+until Milestones 12 and 9 - see `Milestone-Status.md`'s "Deferred filter/sort
+options" note. Milestone 5.1 added the product detail page; Milestone 5.2
+made variant switching live (no page reload) and added the central
+`IPricingService`; Milestone 5.3 closed out Milestone 5 with real
+recently-viewed tracking and category/brand/tag/price-based recommendations.
+Milestone 6.1 added cart core - the Add to Cart button (disabled since
+Milestone 5.1) is now live, and a `/Cart` page manages what's in it.
+Milestone 6.2 added cart merge on sign-in and pricing/stock integrity
+notices. Milestone 6.3 closes out Milestone 6 with an account-only
+wishlist. What's live today:
 
 ### Public / customer-facing (MVC, cookie auth)
 
@@ -15,8 +22,10 @@ today:
   blocks, featured categories, featured/new-arrival/discounted products (all
   admin-managed or query-derived from real catalog data - see
   `Architecture.md`'s "Storefront home page composition" section), with
+  a real, cookie/DB-backed recently-viewed section (Milestone 5.3), and
   honest placeholder sections for best sellers (needs Milestone 9 order
-  data), recommendations, and recently-viewed (both Milestone 5).
+  data) and "recommended for you" (no anchor product to score against on
+  the home page - see `Architecture.md`'s Milestone 5.3 section).
 - The public layout (every page) renders a real, live, now-clickable
   category nav via `CategoryNavViewComponent`.
 - `GET /Products` - all active/published products, paginated.
@@ -34,19 +43,77 @@ today:
   new arrivals) and sorting (relevance, newest, price asc/desc, largest
   discount, name A-Z/Z-A), all persisted in the query string; grid/list
   toggle; pagination; an active-filter summary with clear-filter links; an
-  empty-result state. Product cards stay non-clickable (Milestone 5); brand
-  names on cards and category cards are real links. See `Architecture.md`'s
-  "Catalog listing pages" and "Search, filters, sorting, performance"
-  sections for the query-shape and scope-decision reasoning.
+  empty-result state. Product cards, brand names, and category cards are all
+  real links now. See `Architecture.md`'s "Catalog listing pages" and
+  "Search, filters, sorting, performance" sections for the query-shape and
+  scope-decision reasoning.
+- `GET /Product/{slug}` - the product detail page: gallery with click-to-zoom,
+  price/compare-at/discount%/tax indicator (via the central `IPricingService`),
+  aggregated stock status, per-attribute variant selectors that resolve live
+  (no page reload) - the client disables dropdown options that can't form a
+  real variant given the other selections, and a strict server-side
+  `Resolve` call confirms and displays the authoritative SKU/price/stock/image
+  for any exact match - quantity selector with a live Add to Cart button
+  (Milestone 6.1) and a wishlist toggle button (Milestone 6.3, account-only -
+  an anonymous click redirects to login), description, specifications, warranty/returns/shipping, real
+  related products (category/brand/tag/price-scored recommendations,
+  Milestone 5.3), a real recently-viewed section (viewing this page also
+  records it for next time), and honest placeholders for ratings/reviews/
+  frequently-bought-together. 404 for an unknown, unpublished, inactive,
+  or soft-deleted product. See `Architecture.md`'s "Product detail page",
+  "Variant resolution & pricing service", and "Recently viewed &
+  recommendations" sections for the full reasoning.
+- `GET /Product/{slug}/Resolve?variantId=` - JSON endpoint backing the live
+  variant switcher; rejects a variant that doesn't exist, isn't active, or
+  doesn't belong to the product (Milestone 5.2).
 - `GET /Search/Suggestions?q=` - JSON endpoint backing the header search
   box's debounced (300ms) suggestions dropdown: name, thumbnail, price,
   category, and a link to that product's own search-results page (product
   detail pages don't exist until Milestone 5).
+- `GET /Cart` - the cart page: every line item (image, name, variant, SKU,
+  unit price, quantity, line total), a stock/unavailable badge per line, a
+  Subtotal, Clear cart, and a disabled Checkout button (Milestone 8). A line
+  for a product that's since become unpublished/inactive/deleted stays
+  visible (marked "No longer available") but is excluded from the Subtotal -
+  only Remove works on it. Since Milestone 6.2, a line also shows a "price
+  changed since you added this" note when the live price no longer matches
+  what it was when added, and a "you have more than are available" note when
+  stock has shrunk below the line's quantity - neither one silently changes
+  anything, both just inform.
+- `GET /Cart/Summary` - JSON endpoint backing the header's Cart badge
+  (`{ itemCount }`); renders on every page via `CartSummaryViewComponent`.
+- `POST /Cart/Add`, `POST /Cart/UpdateQuantity`, `POST /Cart/Remove`,
+  `POST /Cart/Clear` - AJAX JSON endpoints, CSRF-protected via the
+  `X-CSRF-TOKEN` request header (see `_Layout.cshtml`'s `csrf-token` meta
+  tag) since there's no posted `<form>`. Add rejects a missing/invalid
+  variant selection and a quantity beyond available stock (untracked
+  inventory and backorder-allowed items are exempt from the stock cap, the
+  same leniency the product detail page already applies); UpdateQuantity
+  additionally rejects an item that's become unavailable since it was added.
+- `GET /Wishlist` (`[Authorize]`) - Milestone 6.3, account-only (no guest
+  wishlist, unlike Cart). Every saved product, most-recently-added first,
+  with a Remove button; a product that's since become unpublished/inactive/
+  deleted is silently excluded from the list, not flagged like Cart's - a
+  wishlist is browsing-adjacent, not a committed purchase intent.
+- `POST /Wishlist/Toggle` (`[Authorize]`) - AJAX JSON endpoint backing the
+  heart/toggle button on the product detail page (not on every product card
+  sitewide - see `Architecture.md`'s Milestone 6.3 section); adds the
+  product if not already saved, removes it if it is, returns
+  `{ isWishlisted, itemCount }`. An anonymous request gets a real `401`
+  (Milestone 6.3 also fixed the default cookie-auth challenge, which
+  otherwise `fetch()` would silently follow as a `200`-with-login-HTML
+  response) so the client-side JS can redirect to `/Account/Login`.
+- `POST /Wishlist/Remove` (`[Authorize]`) - explicit removal for the
+  wishlist page's Remove button; idempotent, no error if the item's already
+  gone.
 - `GET /Account/Register`, `POST /Account/Register` - creates the account
-  (assigned the `Customer` role), signs the user in immediately.
+  (assigned the `Customer` role), signs the user in immediately, then folds
+  any guest cart into the new account (Milestone 6.2 - see
+  `Architecture.md`'s "Cart merge & pricing integrity" section).
 - `GET /Account/Login`, `POST /Account/Login` - validates credentials
   (generic error on failure, distinct message when locked out), signs in via
-  cookie, redirects to `returnUrl` only if it passes `Url.IsLocalUrl`.
+  cookie, merges any guest cart into the account's cart the same way
+  Register does, redirects to `returnUrl` only if it passes `Url.IsLocalUrl`.
 - `POST /Account/Logout` - clears the cookie.
 - `GET/POST /Account/ForgotPassword` - always shows the same confirmation
   regardless of whether the email is registered; sends a reset email (dev:

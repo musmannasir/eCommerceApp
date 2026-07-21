@@ -1,0 +1,16 @@
+@model ProductDetailDto
+@switch (Model.StockState)
+{
+    case ProductStockState.InStock:
+        <span class="badge text-bg-success">In Stock</span>
+        break;
+    case ProductStockState.LowStock:
+        <span class="badge text-bg-warning text-dark">Low Stock - only @Model.AvailableQuantity left</span>
+        break;
+    case ProductStockState.Backorder:
+        <span class="badge text-bg-info text-dark">Available on backorder</span>
+        break;
+    case ProductStockState.OutOfStock:
+        <span class="badge text-bg-secondary">Out of Stock</span>
+        break;
+}

@@ -72,3 +72,107 @@
         }
     });
 }());
+
+// Shared helpers for Cart's AJAX endpoints (Milestone 6.1) - the CSRF token
+// travels as a header instead of a form field since these are JSON POSTs, not
+// posted <form>s. See _Layout.cshtml's csrf-token meta tag.
+function getCsrfToken() {
+    var meta = document.querySelector('meta[name="csrf-token"]');
+    return meta ? meta.getAttribute('content') : '';
+}
+
+function postJson(url, body) {
+    return fetch(url, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+            'X-Requested-With': 'XMLHttpRequest',
+            'X-CSRF-TOKEN': getCsrfToken()
+        },
+        body: body === undefined ? null : JSON.stringify(body)
+    });
+}
+
+// Cart page: quantity update, remove, and clear all AJAX-submit then reload
+// the page - simpler and just as correct as hand-patching every total/subtotal
+// on the page, and this page isn't performance-sensitive enough to need it.
+(function () {
+    var hasCartItems = document.querySelectorAll('.cart-item').length > 0;
+    var clearButton = document.getElementById('cartClearButton');
+    if (!hasCartItems && !clearButton) {
+        return;
+    }
+
+    var errorBox = document.getElementById('cartPageError');
+
+    function showError(message) {
+        if (errorBox) {
+            errorBox.textContent = message;
+            errorBox.classList.remove('d-none');
+        }
+    }
+
+    function handleResponse(response) {
+        if (response.ok) {
+            window.location.reload();
+            return;
+        }
+        response.json().then(function (problem) {
+            showError((problem && problem.detail) || 'Something went wrong. Please try again.');
+        }).catch(function () {
+            showError('Something went wrong. Please try again.');
+        });
+    }
+
+    document.querySelectorAll('.cart-quantity-input').forEach(function (input) {
+        input.addEventListener('change', function () {
+            var quantity = parseInt(input.value, 10);
+            if (!quantity || quantity < 1) {
+                return;
+            }
+            postJson('/Cart/UpdateQuantity', { cartItemId: parseInt(input.dataset.cartItemId, 10), quantity: quantity })
+                .then(handleResponse);
+        });
+    });
+
+    document.querySelectorAll('.cart-remove-button').forEach(function (button) {
+        button.addEventListener('click', function () {
+            postJson('/Cart/Remove', { cartItemId: parseInt(button.dataset.cartItemId, 10) })
+                .then(handleResponse);
+        });
+    });
+
+    if (clearButton) {
+        clearButton.addEventListener('click', function () {
+            postJson('/Cart/Clear').then(handleResponse);
+        });
+    }
+}());
+
+// Wishlist page: remove-from-wishlist buttons (Milestone 6.3) - AJAX-submit
+// then reload, same simple pattern as the cart page's remove/clear.
+(function () {
+    var removeButtons = document.querySelectorAll('.wishlist-remove-button');
+    if (removeButtons.length === 0) {
+        return;
+    }
+
+    var errorBox = document.getElementById('wishlistPageError');
+
+    removeButtons.forEach(function (button) {
+        button.addEventListener('click', function () {
+            postJson('/Wishlist/Remove', { productId: parseInt(button.dataset.productId, 10) })
+                .then(function (response) {
+                    if (response.ok) {
+                        window.location.reload();
+                        return;
+                    }
+                    if (errorBox) {
+                        errorBox.textContent = 'Something went wrong. Please try again.';
+                        errorBox.classList.remove('d-none');
+                    }
+                });
+        });
+    });
+}());

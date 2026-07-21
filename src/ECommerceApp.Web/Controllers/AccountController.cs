@@ -1,10 +1,12 @@
 using System.Security.Claims;
 using ECommerceApp.Application.Auth;
 using ECommerceApp.Application.Auth.Models;
+using ECommerceApp.Application.Carts;
 using ECommerceApp.Application.Common.Interfaces;
 using ECommerceApp.Domain.Security;
 using ECommerceApp.Infrastructure.Identity;
 using ECommerceApp.Web.Models.Account;
+using ECommerceApp.Web.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
@@ -18,6 +20,8 @@ public class AccountController : Controller
     private readonly SignInManager<ApplicationUser> _signInManager;
     private readonly UserManager<ApplicationUser> _userManager;
     private readonly IEmailSender _emailSender;
+    private readonly ICartService _cartService;
+    private readonly ICartOwnerAccessor _cartOwnerAccessor;
     private readonly ILogger<AccountController> _logger;
 
     public AccountController(
@@ -25,12 +29,16 @@ public class AccountController : Controller
         SignInManager<ApplicationUser> signInManager,
         UserManager<ApplicationUser> userManager,
         IEmailSender emailSender,
+        ICartService cartService,
+        ICartOwnerAccessor cartOwnerAccessor,
         ILogger<AccountController> logger)
     {
         _authService = authService;
         _signInManager = signInManager;
         _userManager = userManager;
         _emailSender = emailSender;
+        _cartService = cartService;
+        _cartOwnerAccessor = cartOwnerAccessor;
         _logger = logger;
     }
 
@@ -59,6 +67,7 @@ public class AccountController : Controller
 
         var user = await _userManager.FindByIdAsync(result.Value.UserId);
         await _signInManager.SignInAsync(user!, isPersistent: false);
+        await MergeGuestCartAsync(user!.Id);
 
         return RedirectToLocal(model.ReturnUrl);
     }
@@ -93,6 +102,7 @@ public class AccountController : Controller
 
         var user = await _userManager.FindByIdAsync(result.Value.UserId);
         await _signInManager.SignInAsync(user!, isPersistent: model.RememberMe);
+        await MergeGuestCartAsync(user!.Id);
 
         return RedirectToLocal(model.ReturnUrl);
     }
@@ -227,6 +237,23 @@ public class AccountController : Controller
 
         TempData["Message"] = "All sessions have been revoked. Please log in again.";
         return RedirectToAction(nameof(Login));
+    }
+
+    /// <summary>
+    /// Folds a guest's cart into their account right after sign-in (Milestone
+    /// 6.2) - MVC cookie auth only, since the JWT API surface has no browser
+    /// cookie to read a guest cart from in the first place.
+    /// </summary>
+    private async Task MergeGuestCartAsync(string userId)
+    {
+        var guestToken = _cartOwnerAccessor.TryGetGuestToken();
+        if (guestToken is null)
+        {
+            return;
+        }
+
+        await _cartService.MergeGuestCartIntoUserCartAsync(guestToken, userId);
+        _cartOwnerAccessor.ClearGuestToken();
     }
 
     private IActionResult RedirectToLocal(string? returnUrl)

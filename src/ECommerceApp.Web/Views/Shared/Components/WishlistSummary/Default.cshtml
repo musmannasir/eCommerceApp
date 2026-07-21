@@ -1,0 +1,5 @@
+@model int
+<a class="nav-link position-relative" asp-controller="Wishlist" asp-action="Index" id="wishlistNavLink">
+    Wishlist
+    <span class="badge rounded-pill text-bg-primary @(Model > 0 ? "" : "d-none")" id="wishlistItemCount">@Model</span>
+</a>

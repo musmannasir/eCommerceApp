@@ -285,6 +285,421 @@ extending Milestone 4.2's same precaution rather than assuming the
 established `Expression<Func<>>` pattern would keep working as the query
 grew more complex.
 
+## Product detail page (Milestone 5.1)
+
+**M5.1/M5.2 scope split.** The brief's M5.1 bullet lists "variant selectors"
+as a UI element; its M5.2 bullet separately owns "attribute selection
+resolves exact variant... disables unavailable combinations... blocks
+invalid combos from cart" plus a dedicated pricing service. This milestone
+builds the former only: per-attribute `<select>` dropdowns inside one GET
+form that auto-submits on change (small vanilla JS, not full AJAX), fully
+reloading the page; the server resolves the selected combination to a real
+variant (or falls back to the first active variant with a "not available"
+notice if the combination doesn't exist). Live, no-reload resolution,
+client-side disabling of invalid options, and the centralized pricing
+service are Milestone 5.2's job.
+
+**Variant resolution precedence:** an explicit `variantId` query parameter
+wins if present; otherwise selected attribute-value IDs are combined via the
+same `ProductVariant.BuildCombinationKey` used for duplicate-combination
+prevention in Milestone 2, and matched against active variants' stored
+`CombinationKey`. No match and no selection at all both fall back to the
+first active variant (ordered by Id) - a product page should never render
+with no price/SKU shown at all.
+
+**Stock aggregation reuses the M4 "untracked = available" leniency.** If a
+product (or the selected variant) has zero `InventoryItem` rows anywhere,
+it's treated as InStock rather than penalized for stock never having been
+recorded - the same reasoning already applied to the out-of-stock badge on
+listing pages. Where inventory *is* tracked, on-hand/reserved are summed
+across every warehouse (the storefront doesn't do warehouse selection
+anywhere in the brief), and `Product.LowStockThreshold` - a single
+product-level field, not per-variant - is reused as the low-stock cutoff
+regardless of which variant is currently selected.
+
+**A caught design mistake, not shipped:** the first draft tried to make
+`ProductDetailAttributeDto.SelectedValueId` (unknown until after variant
+resolution) settable by having a private subclass shadow the record's
+`init`-only property with `new int? SelectedValueId { get; set; }`. This
+doesn't compile the way it looks like it should - `new` hides, it doesn't
+relax `init` to `set` on the same underlying property - so it was reverted
+in favor of the obvious fix: collect attribute/value groups as plain tuples
+first, and only construct the final immutable DTOs once the variant is
+known. See `Milestone-Status.md`'s Milestone 5.1 bugs section.
+
+**Honest placeholders, not fabricated data:** ratings summary, review
+preview, and frequently-bought-together all show plain "coming in a later
+milestone" text - no `Review`/`Rating` entity exists yet (Milestone 12), and
+frequently-bought-together needs real basket co-occurrence data from orders
+(Milestone 9) that doesn't exist either. Recently-viewed is the same
+placeholder for now; Milestone 5.3 is where the real tracking mechanism
+(cookie for guests, DB for authenticated customers) gets built.
+
+**Closing the "non-clickable product" loop.** Every product card built since
+Milestone 4.1 (`_ProductCard.cshtml`, used on the home page and every
+listing page, plus the Catalog list-view rows) explicitly deferred linking
+the product itself because the detail page didn't exist. This milestone
+makes them real links to `/Product/{slug}`, using Bootstrap's
+`stretched-link` pattern on the list-view rows specifically so the
+already-present brand-name link (a sibling anchor, not nested - browsers
+don't support nested `<a>` tags) keeps working independently.
+
+## Variant resolution & pricing service (Milestone 5.2)
+
+**Two resolution paths, one strict and one lenient, by design.** `Details()`
+(page load, arbitrary/bookmarkable URL) stays lenient - an unmatched
+combination falls back to the first active variant with a notice, since the
+URL isn't something the app fully controls. `Resolve()` (the live AJAX
+switch) is strict - it's the brief's "server revalidates every variant
+selection" requirement made concrete: it rejects a variant that doesn't
+exist, isn't active, or doesn't belong to the product, rather than falling
+back to anything. In normal use the client-side disabling logic should
+never let a customer construct a request that fails this check; reaching
+the strict path with an invalid combination means something bypassed the
+UI (a stale bookmark of a since-deactivated variant, a manually crafted
+request), which is exactly when "revalidate, don't trust the client" earns
+its keep.
+
+**Client-side disabling without a round trip per hover.** The full active-
+variant combination matrix (`variantId` + its attribute-value IDs) is
+embedded as JSON on page load. Changing a dropdown re-evaluates, for every
+option in every other dropdown, whether some variant combination still
+contains that option's value together with everything currently selected
+elsewhere - pure client-side set logic, no network call needed just to grey
+out an option. Only once a selection change resolves to an *exact* variant
+match does the client call `Resolve()`, and only that response (never the
+embedded matrix) is used to update the visible price/stock/image - the
+matrix only ever drives which options are clickable, never what's shown.
+
+**`IPricingService` is deliberately a pure function, not a DB-backed
+service.** "Central pricing service, single source of truth" (the brief's
+own words) doesn't yet need any I/O: there's no `Promotion` entity
+(Milestone 7.1) to look up and no real tax-rate engine (Milestone 7.2) to
+query, so `Calculate(basePrice, baseCompareAtPrice, variantPrice,
+variantCompareAtPrice)` takes plain values its callers already have loaded
+and returns a `PriceResultDto` synchronously - fully unit-testable with no
+mocking, and safe to inject anywhere (registered as a singleton) without
+the cross-service-transaction concerns that shaped decisions elsewhere (see
+Milestone 3.3's notes). `PromotionAdjustment` is hardcoded to 0 and
+`IsTaxInclusive` reads a single `Store:PricesIncludeTax` config flag - both
+are honest placeholders for real logic Milestones 7.1/7.2 will add, not
+guesses at what that logic will look like.
+
+**A bug that only manual testing caught.** `System.Text.Json` serializes
+enums as integers by default, not names. The live-resolution JSON response
+initially sent `stockState` as a bare number while the client JS expected a
+string key - every automated test passed (they assert on the C# enum
+directly, never the wire format), but the stock badge silently went blank
+in the browser. Fixed with `[property: JsonConverter(typeof(JsonStringEnumConverter))]`
+scoped to that one property. See `Milestone-Status.md`'s Milestone 5.2 bugs
+section for the full account - a concrete reminder that this project's
+"verify against real SQL Server, not just InMemory" discipline has a JSON
+equivalent: verify the actual response shape a browser will parse, not just
+the object a C# test constructs.
+
+## Recently viewed & recommendations (Milestone 5.3)
+
+**`IRecentlyViewedService` lives in the Web project, not Infrastructure.**
+Every other Storefront service (`HomePageService`, `CatalogBrowseService`,
+`ProductDetailService`, `RecommendationService`) queries
+`ApplicationDbContext` directly and needs nothing else. Recently-viewed
+tracking is different: a guest customer has no `UserId` to key a DB row on,
+so the only place to persist their history is a cookie, and cookies require
+`HttpContext` - something Infrastructure deliberately has no dependency on.
+This is exactly the shape `ICurrentUserService`/`CurrentUserService` already
+solved (Web owns anything HttpContext-dependent, registered directly in
+`Program.cs` rather than through `AddInfrastructure()`), so
+`RecentlyViewedService` follows the same precedent. `ProductDetailService`
+and `HomePageService` (both in Infrastructure) still depend on it, but only
+through the `IRecentlyViewedService` abstraction defined in Application -
+Infrastructure never references the Web project, and DI resolves the
+concrete Web-project implementation at runtime regardless of which project
+registered it.
+
+**Guest tracking is a single cookie, not one cookie per product.** A
+`HttpOnly`, `SameSite=Lax` cookie (`Secure` when not in Development, mirroring
+the existing Identity cookie policy) named `RecentlyViewed` holds a
+comma-separated, most-recent-first list of product IDs - nothing else, no
+name, no session token, nothing personally identifying. `Expires` is 90 days
+and `IsEssential=false` (it's a convenience feature, not something the app
+requires to function, so it doesn't bypass a "reject non-essential cookies"
+consent choice). Re-viewing a product already in the list moves it to the
+front instead of duplicating it, and the list is trimmed to
+`Store:RecentlyViewedMaxItems` (default 10) on every view.
+
+**Authenticated tracking is a DB row per `(user, product)`, upserted and
+trimmed the same way.** `RecentlyViewedItem` is a plain `BaseEntity` (no
+soft-delete, no optimistic-concurrency need - the same reasoning already
+applied to `ProductTagMapping`, `SupplierProduct`, and the stock-ledger
+entities), with `UserId` as a plain `string` field rather than a navigation
+property, since `ApplicationUser` lives in Infrastructure and Domain cannot
+reference it (the same pattern `RefreshToken`/`UserSession` already
+established in Milestone 1). A product that's since been unpublished,
+deactivated, or soft-deleted is simply filtered out by the same
+`IsActive`/`IsPublished` query every other Storefront read applies - the
+history silently forgets it rather than erroring or showing a broken card.
+
+**"Recommendations v1" scores candidates, it doesn't rank by popularity.**
+`RecommendationService` runs two passes: pass one scores every active,
+published candidate (excluding the source product) with simple arithmetic -
+same category (+3), same brand (+2), selling price within +/-30% of the
+source (+1), and one point per shared `ProductTag` - filters out anything
+scoring 0, orders by score descending, and takes the requested count as a
+lean anonymous projection. Pass two re-queries just those winning IDs
+through the same inline `Expression<Func<Product, HomeProductCardDto>>`
+projection every other Storefront service uses (see the EF Core translation
+note below), then re-sorts to match pass one's score order, since a
+`Contains()` filter doesn't preserve it. **"Best selling" is deliberately not
+one of the signals** - there's no `Order`/`OrderItem` history until
+Milestone 9, and a signal that always contributes zero would be dead weight,
+not a real feature; the interface (`GetRecommendationsAsync(productId,
+count)`) doesn't need to change when that signal is eventually added, only
+the scoring inside the implementation.
+
+**What upgraded and what stayed a placeholder.** The product detail page's
+"Related Products" section, previously a same-category-only query built in
+Milestone 5.1, now sources from `IRecommendationService` instead - the DTO
+field and the view are unchanged, only the query behind it got smarter. The
+home page's "Recently viewed" section, an honest placeholder since
+Milestone 4.1, is now backed by the same `IRecentlyViewedService`. Home
+page's "Recommended for you" and both pages' "Best sellers" **remain
+placeholders**: best sellers still needs order history (Milestone 9), and a
+home-page "recommended for you" has no anchor product to score against -
+`IRecommendationService` scores relative to a specific product, which is
+exactly what exists on a product detail page and exactly what doesn't exist
+on the home page. Inventing a different, unscoped signal wasn't part of this
+milestone's brief, so it stays an honest gap rather than a guess.
+
+## Cart core (Milestone 6.1)
+
+**No brief text was available for this sub-milestone in this session** (the
+original 18-milestone document was pasted early in a long-running session and
+had scrolled out of context by the time M6.1 started; it was never saved as a
+file in the repo). Rather than guess at exact requirements, the user was
+asked and explicitly agreed to proceed from reasonable cart-core conventions:
+add/update/remove/clear line items, a guest cart via a cookie and an
+authenticated cart in the database, quantity validated against stock, totals
+via the existing `IPricingService`, with cart merge-on-login and
+price/stock re-validation at checkout-adjacent points explicitly deferred to
+Milestone 6.2 (not this one's job) and wishlist deferred to Milestone 6.3.
+
+**`Cart`/`CartItem` follow the InventoryItem precedent closely.** A `Cart` is
+owned by exactly one of `UserId` or `GuestToken` (two filtered unique
+indexes, never both/neither), created lazily on the first item added - not
+every anonymous visitor gets a row, only one who actually adds something.
+`CartItem` has `Restrict` (not `Cascade`) foreign keys to both `Product` and
+`ProductVariant` - the exact same reasoning `InventoryItemConfiguration`
+already established for Milestone 3.1 (a product is never physically
+deleted in this app; and having both a direct `Product` FK and an indirect
+one via `ProductVariant -> Product` rules out `Cascade` on both anyway, since
+SQL Server rejects multiple cascade paths to the same table). The "one line
+per product-or-variant per cart" rule reuses the same pair of filtered unique
+indexes InventoryItem uses for "one purchasable unit per warehouse".
+
+**Billing never uses a stored price.** Every read resolves the *current*
+price via `IPricingService.Calculate(...)`, the same single source of truth
+the product detail page uses. (Milestone 6.2 later adds a `PriceWhenAdded`
+snapshot field to `CartItem`, but purely to *detect and flag* a price change
+for the customer - `LineTotal` still always comes from the live calculation,
+never from that stored value.)
+
+**`ICartOwnerAccessor` lives in Web, `CartService` stays in Infrastructure -
+a deliberate split from the Milestone 5.3 precedent.** `RecentlyViewedService`
+needed to move to Web *entirely* because every one of its operations touches
+`HttpContext` (reading/writing the guest cookie). Cart's HttpContext
+dependency is much narrower: only "who owns this request's cart" needs
+`HttpContext`, and that's a single, reusable piece of logic
+(`ICartOwnerAccessor.GetOrCreateOwner()`/`TryGetOwner()`, in Web) that
+resolves a plain `CartOwner` value up front. Once that value exists,
+everything else - stock checks, EF queries, price calculation - has zero
+HttpContext dependency, so `CartService` stays Infrastructure-hosted like
+every other Storefront service, taking `CartOwner` as a parameter instead of
+reaching for `HttpContext` itself. `TryGetOwner()` (read-only, never sets a
+cookie) versus `GetOrCreateOwner()` (write path, mints a guest token if
+needed) mirrors `RecentlyViewedService`'s "don't cookie a visitor who never
+writes anything" discipline - `CartSummaryViewComponent` renders on every
+single page via the layout and must never hand out a cart cookie just
+because someone loaded a page.
+
+**A cart line for a since-unpublished/deactivated/soft-deleted product stays
+visible, unlike recently-viewed history.** Recently-viewed silently drops an
+item that's no longer available - it's just browsing history, and a
+customer doesn't need to know or care. A cart is different: a customer
+expects to see exactly what's in it, including something that became
+unavailable after they added it, so they can consciously remove it rather
+than have it vanish. `CartService` resolves item DISPLAY data (name, slug,
+image) via `Products.IgnoreQueryFilters()` (bypassing the soft-delete filter
+for that one query only) so a soft-deleted product's line still renders, but
+computes `IsAvailable` independently (active, published, not deleted, and -
+if a variant - that variant active too) and excludes unavailable lines from
+`Subtotal`/`TotalItemCount`. Only `RemoveItemAsync` is ever allowed on an
+unavailable line; `UpdateQuantityAsync` rejects it.
+
+**Stock validation duplicates `ProductDetailService`'s aggregation logic
+rather than sharing it**, consistent with this codebase's established
+convention (see Milestone 5's notes) of each Storefront service owning its
+own `DbContext` access and its own small projections instead of introducing
+a shared abstraction prematurely. The same untracked-inventory and
+backorder leniency applies: no `InventoryItem` rows means unlimited
+quantity is allowed; `AllowBackorder` on any matching row means the quantity
+cap is skipped entirely rather than rejected.
+
+**CSRF via a request header, not a form field - Cart's mutations are the
+first AJAX-POST flow in this app.** Every prior AJAX endpoint (search
+suggestions, M5.2's live variant resolver) was GET-only, so CSRF never came
+up. Cart's Add/UpdateQuantity/Remove/Clear are JSON POSTs with no `<form>`
+around them, so the antiforgery token has to travel as a header instead.
+`Program.cs` configures `AddAntiforgery(options => options.HeaderName =
+"X-CSRF-TOKEN")`; `_Layout.cshtml` calls `IAntiforgery.GetAndStoreTokens
+(Context)` (the same call `@Html.AntiForgeryToken()` makes internally,
+just rendered into a `<meta name="csrf-token">` tag instead of a hidden
+form field) on every single page load, so the token is always present and
+always valid regardless of which page a cart action originates from;
+`site.js`'s `postJson()` helper reads it and attaches the header
+automatically.
+
+**A test-database cleanup gap this surfaced, not a product bug**: adding
+`CartItems`' `Restrict` FKs to `Products` meant `TestDatabase.ResetAsync`'s
+per-run cleanup script needed a matching `DELETE FROM CartItems; DELETE FROM
+Carts;` before its existing `Products` cleanup, or every integration test
+after `CartFlowTests` first ran would fail at cleanup with a foreign key
+violation. See `Milestone-Status.md`'s Milestone 6.1 bugs section.
+
+## Cart merge & pricing integrity (Milestone 6.2)
+
+**Same brief-text gap as Milestone 6.1** - no spec was available for this
+sub-milestone either, so scope was agreed with the user as reasonable
+conventions implied by the name: fold a guest's cart into their account on
+sign-in, and re-validate a cart's price/stock assumptions whenever it's
+read, since both a customer and their catalog can change between when an
+item was added and when they come back to check out.
+
+**Merge runs in `AccountController`, not `ICartOwnerAccessor` or
+`CartService` itself.** Neither of those has (or should have) any notion of
+"a sign-in just happened" - that's an MVC-controller-level event.
+`AccountController.Login`/`Register` call `MergeGuestCartAsync` immediately
+after `SignInManager.SignInAsync(...)` succeeds, using
+`ICartOwnerAccessor.TryGetGuestToken()` - a cookie read with no auth-state
+branching, deliberately distinct from `TryGetOwner()`/`GetOrCreateOwner()`.
+This distinction matters because of an ASP.NET Core cookie-auth quirk:
+`SignInAsync` sets a response cookie, but `HttpContext.User` in the *same*
+request doesn't reflect it until the *next* request - so `TryGetOwner()`,
+which branches on `User.Identity.IsAuthenticated`, would still see an
+anonymous user immediately after login and go looking at the wrong branch.
+Reading the guest cookie unconditionally sidesteps that entirely. The JWT
+API surface (`/api/v1/auth`) doesn't merge anything - it's bearer-token
+auth with no browser cookie to read a guest cart from in the first place.
+
+**Two merge paths, chosen by whether the user already has a cart.** If they
+don't, the guest cart is just reassigned (`GuestToken = null; UserId =
+theirs`) - no line-by-line work needed. If they do, each guest line either
+increments a matching `(ProductId, ProductVariantId)` line in the user's
+cart, or moves over as a new line if there's no match; either way the
+now-empty guest cart row is deleted afterward. A combined quantity is
+**capped to current stock, never rejected** - a sign-in is not a user
+action the customer can retry or be blocked on, so the merge always
+succeeds, and any resulting stock conflict surfaces afterward through the
+same `QuantityExceedsStock` signal a plain cart read produces.
+
+**`PriceWhenAdded` is a snapshot for comparison only - `LineTotal` still
+never uses it.** Every write path that represents "the customer is looking
+at today's price right now" (adding a line, incrementing an existing one,
+an explicit quantity update, or a merge) re-stamps `PriceWhenAdded` to the
+current live price - there is deliberately no "which of the two prices
+wins" logic for a merge, since re-stamping to the live price sidesteps the
+question entirely. A plain cart read never touches it: `BuildCartDtoAsync`
+just compares the stored value against the live price and sets
+`PriceChanged` (with `PreviousUnitPrice`) when they differ, letting the
+customer see that something changed since they added it, without ever
+charging the stale number.
+
+**`QuantityExceedsStock` is informational, not self-correcting.** An
+earlier draft of this milestone considered auto-clamping a cart line's
+`Quantity` down to current stock whenever a read found it too high (e.g.
+another customer bought the last few units after this one added theirs to
+their cart). That was deliberately rejected: silently rewriting a value a
+customer explicitly chose is a worse surprise than a warning banner,
+and it would have made `GetCartAsync` - a read - had first started
+mutating the database as a side effect, hurting testability and the
+principle of least astonishment for no real benefit before checkout
+(Milestone 8) exists to actually act on it. Instead, `BuildCartDtoAsync`
+flags the discrepancy (current `Quantity` vs. `AvailableQuantity`) and
+leaves the stored row untouched; the customer decides whether to reduce it
+via the same `UpdateQuantityAsync` path that already re-validates against
+stock.
+
+## Wishlist (Milestone 6.3)
+
+**Same brief-text gap as Milestones 6.1/6.2** - scope was agreed with the
+user as reasonable conventions implied by the name, closing out Milestone 6.
+
+**Account-only, deliberately not a Cart-style guest feature.** Every other
+Storefront feature that needs per-visitor identity (recently-viewed, cart)
+supports a guest via a cookie, so it's worth being explicit about why
+Wishlist doesn't: a wishlist is meant to persist indefinitely and follow a
+customer across devices, which a cookie fundamentally can't do, and it's a
+much lower-frequency action than adding to cart - guest checkout friction
+is a real, well-documented cart-abandonment driver, but nobody abandons a
+purchase because saving something for later required an account. Real
+stores (Amazon, Target) make the same call. `WishlistController` is
+`[Authorize]`-gated wholesale rather than branching per-action.
+
+**Product-level only, no variant - a lighter bookmark than a cart line.**
+`WishlistItem` (`BaseEntity`, one row per `(UserId, ProductId)`, `Cascade`
+FK to `Products`) has no `ProductVariantId` at all. Cart needs variant
+granularity because it represents a specific purchasable thing the
+customer is about to pay for; a wishlist is "I'm interested in this
+product," and variant selection naturally happens later if the customer
+moves it into their cart. `Cascade` (not `Restrict`) is safe and correct
+here, unlike `CartItem`'s `Restrict`, precisely *because* there's no second
+FK to `ProductVariant` creating a multi-cascade-path conflict - the same
+shape `RecentlyViewedItemConfiguration` already uses.
+
+**Unavailable items are silently dropped, not flagged like Cart's.** A
+product that's since been unpublished, deactivated, or soft-deleted just
+disappears from `GetWishlistAsync`'s results - the same reasoning
+`RecentlyViewedService` already uses, not Cart's "keep it visible with a
+badge" approach. The distinction is what each list represents: a cart line
+is a customer's stated intent to buy something specific *right now*, so
+losing it silently would be a real problem; a wishlist is closer to
+browsing history with a save button, where quietly forgetting something
+that's no longer purchasable is the less surprising behavior.
+
+**The toggle button is scoped to the product detail page only - not every
+product card sitewide.** A heart/toggle icon on every card across the home
+page, every listing page, and search results would be the more complete
+real-world feature, but it requires knowing each card's wishlist state up
+front, which means threading `IWishlistService` through every
+`HomeProductCardDto`-emitting service (`HomePageService`,
+`CatalogBrowseService`, `RecommendationService`, `RecentlyViewedService`) -
+a change to four already-completed Storefront services for a nice-to-have,
+not "wishlist works." `ProductDetailDto.IsWishlisted` only touches the one
+DTO that already has a per-request, per-product context to hang it on.
+Sitewide card-level toggles are a reasonable candidate for later polish,
+not this sub-milestone.
+
+**Toggle, not separate Add/Remove, is the primary write path** - `IWishlist
+Service.ToggleAsync` adds if absent, removes if present, matching the
+heart-icon interaction pattern the button implements. A dedicated
+`RemoveItemAsync` still exists for the wishlist page's explicit Remove
+button, where "toggle" would be a confusing name for an action that only
+ever removes.
+
+**A real bug this milestone's own tests caught, not the product's business
+logic**: an anonymous `fetch()` POST to `/Wishlist/Toggle` received ASP.NET
+Core's default cookie-auth behavior - a `302` redirect to the login page -
+which `fetch()`'s default `redirect: 'follow'` silently follows, resolving
+with a `200` status and a login-page HTML body instead of anything the
+client-side code could recognize as "you need to sign in." Fixed by
+overriding `CookieAuthenticationOptions.Events.OnRedirectToLogin` in
+`Program.cs`: if the request carries `Accept: application/json` or
+`X-Requested-With: XMLHttpRequest`, respond `401` directly instead of
+redirecting; `site.js`'s shared `postJson()` helper (used by Cart's
+endpoints too) now sends both headers on every AJAX call, so this also
+hardens Cart's endpoints against the same class of issue even though Cart
+itself doesn't require authentication. See `Milestone-Status.md`'s
+Milestone 6.3 bugs section for the full account.
+
 ## Framework version note
 
 The brief fixes the stack at **.NET 8**. This machine has only the **.NET 10**

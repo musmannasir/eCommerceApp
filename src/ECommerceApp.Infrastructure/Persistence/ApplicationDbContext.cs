@@ -1,9 +1,12 @@
 using ECommerceApp.Application.Common.Interfaces;
+using ECommerceApp.Domain.Carts;
 using ECommerceApp.Domain.Catalog;
 using ECommerceApp.Domain.Common;
 using ECommerceApp.Domain.Inventory;
 using ECommerceApp.Domain.Marketing;
 using ECommerceApp.Domain.Security;
+using ECommerceApp.Domain.Storefront;
+using ECommerceApp.Domain.Wishlist;
 using ECommerceApp.Infrastructure.Identity;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
@@ -61,6 +64,10 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser, IdentityR
     public DbSet<GoodsReceipt> GoodsReceipts => Set<GoodsReceipt>();
     public DbSet<GoodsReceiptItem> GoodsReceiptItems => Set<GoodsReceiptItem>();
     public DbSet<HomePageBanner> HomePageBanners => Set<HomePageBanner>();
+    public DbSet<RecentlyViewedItem> RecentlyViewedItems => Set<RecentlyViewedItem>();
+    public DbSet<Cart> Carts => Set<Cart>();
+    public DbSet<CartItem> CartItems => Set<CartItem>();
+    public DbSet<WishlistItem> WishlistItems => Set<WishlistItem>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

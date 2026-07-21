@@ -1,0 +1,25 @@
+@model ECommerceApp.Application.Wishlist.Models.WishlistDto
+@{
+    ViewData["Title"] = "Your Wishlist";
+}
+
+<h1 class="h3 mb-4">Your Wishlist</h1>
+
+@if (Model.Items.Count == 0)
+{
+    <p class="text-muted">Your wishlist is empty. <a asp-controller="Catalog" asp-action="Index">Continue shopping</a>.</p>
+}
+else
+{
+    <div class="row row-cols-2 row-cols-md-3 row-cols-lg-4 g-3">
+        @foreach (var item in Model.Items)
+        {
+            <div class="col">
+                @await Html.PartialAsync("~/Views/Home/_ProductCard.cshtml", item.Product)
+                <button type="button" class="btn btn-sm btn-outline-danger w-100 mt-2 wishlist-remove-button" data-product-id="@item.Product.Id">Remove</button>
+            </div>
+        }
+    </div>
+}
+
+<div class="alert alert-danger mt-3 d-none" id="wishlistPageError"></div>

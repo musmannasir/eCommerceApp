@@ -21,9 +21,24 @@ public static partial class HtmlHelpers
         return valueMatch.Groups[1].Value;
     }
 
+    /// <summary>Every page (via _Layout.cshtml) carries this meta tag for AJAX POSTs (Cart's Add/UpdateQuantity/Remove/Clear) that send the token as a header instead of a form field.</summary>
+    public static string ExtractMetaCsrfToken(string html)
+    {
+        var match = MetaCsrfTokenRegex().Match(html);
+        if (!match.Success)
+        {
+            throw new InvalidOperationException("Could not find the csrf-token meta tag in the response HTML.");
+        }
+
+        return match.Groups[1].Value;
+    }
+
     [GeneratedRegex("""<input[^>]*name="__RequestVerificationToken"[^>]*>""")]
     private static partial Regex AntiForgeryInputTagRegex();
 
     [GeneratedRegex("value=\"([^\"]*)\"")]
     private static partial Regex ValueAttributeRegex();
+
+    [GeneratedRegex("""<meta name="csrf-token" content="([^"]*)" />""")]
+    private static partial Regex MetaCsrfTokenRegex();
 }

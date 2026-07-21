@@ -17,9 +17,13 @@ Core Identity's tables plus `RefreshTokens`, `UserSessions`, and
 (Milestone 4.1), adds `HomePageBanners`. The seventh, `ProductPerformanceIndexes`
 (Milestone 4.3), adds no tables - only three indexes on `Products`
 (`IsActive`+`IsPublished` composite, `SellingPrice`, `PublishedAtUtc`) to
-match the storefront listing queries' actual filter/sort shapes - see
-`Data-Dictionary.md` for full column detail. No customer-order tables exist
-yet; those arrive starting Milestone 9. This document grows into a full
+match the storefront listing queries' actual filter/sort shapes. Milestone
+5.1/5.2 (the product detail page and its pricing service) add **no schema
+at all** - everything they need already existed from Milestone 2 (`Product`,
+`ProductVariant`, its attribute values) and Milestone 3.1 (`InventoryItem`);
+`IPricingService` is a pure, stateless calculator with no table of its own -
+see `Data-Dictionary.md` for full column detail. No customer-order tables
+exist yet; those arrive starting Milestone 9. This document grows into a full
 ER-level description of the schema as they're introduced.
 
 `ApplicationDbContext` now extends `IdentityDbContext<ApplicationUser,
@@ -89,7 +93,10 @@ None of this matters for soft-deleted entities in practice - `Remove()` on an
 `AuditableEntity` is converted to an `IsDeleted = true` update, never a real
 `DELETE`, so these constraints only ever fire for the plain-`BaseEntity` join
 tables (`ProductTagMappings`, `ProductVariantAttributeValues`), which are
-genuinely removed when unlinked.
+genuinely removed when unlinked. Milestone 6.1's `CartItems` reapplies the
+`RESTRICT` choice for the same reason `InventoryItems` (Milestone 3.1) did:
+it has a direct FK to `Products` and an indirect one via `ProductVariants ->
+Products`, so `CASCADE` on both is the same rejected multiple-path shape.
 
 ## RowVersion is now actually enforced
 

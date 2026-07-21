@@ -153,7 +153,7 @@
             <div class="list-group">
                 @foreach (var product in Model.Products.Items)
                 {
-                    <div class="list-group-item d-flex gap-3 align-items-center">
+                    <div class="list-group-item d-flex gap-3 align-items-center position-relative">
                         @if (!string.IsNullOrEmpty(product.ImagePath))
                         {
                             <img src="@product.ImagePath" alt="@product.Name" loading="lazy" style="width:64px;height:64px;object-fit:cover" />
@@ -167,17 +167,17 @@
                             {
                                 @if (!string.IsNullOrEmpty(product.BrandSlug))
                                 {
-                                    <div class="text-muted small"><a href="/Brand/@product.BrandSlug" class="text-muted">@product.BrandName</a></div>
+                                    <div class="text-muted small position-relative" style="z-index:2"><a href="/Brand/@product.BrandSlug" class="text-muted">@product.BrandName</a></div>
                                 }
                                 else
                                 {
                                     <div class="text-muted small">@product.BrandName</div>
                                 }
                             }
-                            <div class="fw-semibold">@product.Name</div>
+                            <a href="/Product/@product.Slug" class="fw-semibold text-reset stretched-link">@product.Name</a>
                             @if (product.IsOutOfStock)
                             {
-                                <span class="badge text-bg-secondary">Out of stock</span>
+                                <div><span class="badge text-bg-secondary">Out of stock</span></div>
                             }
                         </div>
                         <div class="text-end">

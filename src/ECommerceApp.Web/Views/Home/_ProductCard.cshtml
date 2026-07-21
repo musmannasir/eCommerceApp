@@ -1,16 +1,17 @@
 @model HomeProductCardDto
-@* The product itself is non-clickable: product detail pages don't exist until
-   Milestone 5. The brand name links out, though - brand pages exist as of
-   Milestone 4.2. *@
+@* Product cards link to the detail page as of Milestone 5.1. The brand name is a
+   separate sibling link (not nested inside the product anchor - invalid HTML). *@
 <div class="card h-100">
-    @if (!string.IsNullOrEmpty(Model.ImagePath))
-    {
-        <img src="@Model.ImagePath" class="card-img-top" alt="@Model.Name" loading="lazy" style="height:160px;object-fit:cover" />
-    }
-    else
-    {
-        <div class="bg-light d-flex align-items-center justify-content-center text-muted small" style="height:160px">No image</div>
-    }
+    <a href="/Product/@Model.Slug" class="text-decoration-none text-reset">
+        @if (!string.IsNullOrEmpty(Model.ImagePath))
+        {
+            <img src="@Model.ImagePath" class="card-img-top" alt="@Model.Name" loading="lazy" style="height:160px;object-fit:cover" />
+        }
+        else
+        {
+            <div class="bg-light d-flex align-items-center justify-content-center text-muted small" style="height:160px">No image</div>
+        }
+    </a>
     <div class="card-body">
         @if (!string.IsNullOrEmpty(Model.BrandName))
         {
@@ -23,7 +24,9 @@
                 <div class="text-muted small">@Model.BrandName</div>
             }
         }
-        <div class="fw-semibold text-truncate" title="@Model.Name">@Model.Name</div>
+        <a href="/Product/@Model.Slug" class="text-decoration-none text-reset">
+            <div class="fw-semibold text-truncate" title="@Model.Name">@Model.Name</div>
+        </a>
         <div>
             <span class="fw-bold">@Model.SellingPrice.ToString("0.00")</span>
             @if (Model.CompareAtPrice.HasValue)
