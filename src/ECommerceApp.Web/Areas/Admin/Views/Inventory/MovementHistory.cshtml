@@ -1,0 +1,59 @@
+@model PagedResult<StockMovementDto>
+@{
+    var item = (InventoryItemDto)ViewData["Item"]!;
+    ViewData["Title"] = "Movement History";
+}
+
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h1 class="h3 mb-0">Movement History</h1>
+        <div class="text-muted">@item.ProductName (@item.Sku) &mdash; @item.WarehouseName</div>
+    </div>
+    <a asp-action="Index" class="btn btn-outline-secondary">Back to overview</a>
+</div>
+
+<table class="table table-hover align-middle">
+    <thead>
+        <tr>
+            <th>Occurred</th>
+            <th>Type</th>
+            <th class="text-end">Change</th>
+            <th class="text-end">On hand after</th>
+            <th class="text-end">Reserved after</th>
+            <th>Reason</th>
+            <th>By</th>
+        </tr>
+    </thead>
+    <tbody>
+        @foreach (var movement in Model.Items)
+        {
+            <tr>
+                <td>@movement.OccurredAtUtc.ToString("u")</td>
+                <td>@movement.MovementType</td>
+                <td class="text-end">@(movement.QuantityChange > 0 ? "+" : "")@movement.QuantityChange</td>
+                <td class="text-end">@movement.QuantityOnHandAfter</td>
+                <td class="text-end">@movement.QuantityReservedAfter</td>
+                <td>@movement.Reason</td>
+                <td class="text-muted small">@(movement.CreatedByUserId ?? "-")</td>
+            </tr>
+        }
+        @if (Model.Items.Count == 0)
+        {
+            <tr><td colspan="7" class="text-center text-muted py-4">No stock movements recorded yet.</td></tr>
+        }
+    </tbody>
+</table>
+
+@if (Model.TotalPages > 1)
+{
+    <nav>
+        <ul class="pagination">
+            @for (var i = 1; i <= Model.TotalPages; i++)
+            {
+                <li class="page-item @(i == Model.Page ? "active" : "")">
+                    <a class="page-link" asp-action="MovementHistory" asp-route-id="@item.Id" asp-route-page="@i">@i</a>
+                </li>
+            }
+        </ul>
+    </nav>
+}

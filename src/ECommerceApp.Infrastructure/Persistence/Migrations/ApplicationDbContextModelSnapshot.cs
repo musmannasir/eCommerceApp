@@ -286,8 +286,14 @@ namespace ECommerceApp.Infrastructure.Persistence.Migrations
 
                     b.HasIndex("CategoryId");
 
+                    b.HasIndex("PublishedAtUtc");
+
+                    b.HasIndex("SellingPrice");
+
                     b.HasIndex("Slug")
                         .IsUnique();
+
+                    b.HasIndex("IsActive", "IsPublished");
 
                     b.ToTable("Products");
                 });
@@ -655,6 +661,712 @@ namespace ECommerceApp.Infrastructure.Persistence.Migrations
                         .IsUnique();
 
                     b.ToTable("ProductVariantAttributeValues");
+                });
+
+            modelBuilder.Entity("ECommerceApp.Domain.Inventory.GoodsReceipt", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("Notes")
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)");
+
+                    b.Property<string>("OverrideReason")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<int>("PurchaseOrderId")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime>("ReceivedAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("ReceivedByUserId")
+                        .HasMaxLength(450)
+                        .HasColumnType("nvarchar(450)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("PurchaseOrderId");
+
+                    b.HasIndex("ReceivedAtUtc");
+
+                    b.ToTable("GoodsReceipts");
+                });
+
+            modelBuilder.Entity("ECommerceApp.Domain.Inventory.GoodsReceiptItem", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<int>("GoodsReceiptId")
+                        .HasColumnType("int");
+
+                    b.Property<bool>("IsOverride")
+                        .HasColumnType("bit");
+
+                    b.Property<int>("PurchaseOrderItemId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("QuantityReceived")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("GoodsReceiptId");
+
+                    b.HasIndex("PurchaseOrderItemId");
+
+                    b.ToTable("GoodsReceiptItems");
+                });
+
+            modelBuilder.Entity("ECommerceApp.Domain.Inventory.InventoryItem", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<bool>("AllowBackorder")
+                        .HasColumnType("bit");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("CreatedByUserId")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("bit");
+
+                    b.Property<DateTime>("LastStockUpdateUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int>("ProductId")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("ProductVariantId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("QuantityOnHand")
+                        .HasColumnType("int");
+
+                    b.Property<int>("QuantityReserved")
+                        .HasColumnType("int");
+
+                    b.Property<int>("ReorderLevel")
+                        .HasColumnType("int");
+
+                    b.Property<int>("ReorderQuantity")
+                        .HasColumnType("int");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.Property<int>("StockStatus")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime?>("UpdatedAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("UpdatedByUserId")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<int>("WarehouseId")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ProductId");
+
+                    b.HasIndex("ProductVariantId");
+
+                    b.HasIndex("StockStatus");
+
+                    b.HasIndex("WarehouseId", "ProductId")
+                        .IsUnique()
+                        .HasFilter("[ProductVariantId] IS NULL");
+
+                    b.HasIndex("WarehouseId", "ProductVariantId")
+                        .IsUnique()
+                        .HasFilter("[ProductVariantId] IS NOT NULL");
+
+                    b.ToTable("InventoryItems");
+                });
+
+            modelBuilder.Entity("ECommerceApp.Domain.Inventory.InventoryReservation", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("CreatedByUserId")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<DateTime?>("ExpiresAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int>("InventoryItemId")
+                        .HasColumnType("int");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("bit");
+
+                    b.Property<int>("Quantity")
+                        .HasColumnType("int");
+
+                    b.Property<string>("ReferenceId")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<string>("ReferenceType")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<DateTime?>("ReleasedAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime?>("UpdatedAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("UpdatedByUserId")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("InventoryItemId");
+
+                    b.HasIndex("Status");
+
+                    b.ToTable("InventoryReservations");
+                });
+
+            modelBuilder.Entity("ECommerceApp.Domain.Inventory.PurchaseOrder", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTime?>("ApprovedAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("ApprovedByUserId")
+                        .HasMaxLength(450)
+                        .HasColumnType("nvarchar(450)");
+
+                    b.Property<DateTime?>("CancelledAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("CancelledByUserId")
+                        .HasMaxLength(450)
+                        .HasColumnType("nvarchar(450)");
+
+                    b.Property<DateTime?>("CompletedAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("CreatedByUserId")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<DateTime?>("ExpectedDeliveryDate")
+                        .HasColumnType("datetime2");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("Notes")
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)");
+
+                    b.Property<string>("OrderNumber")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime?>("SubmittedAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int>("SupplierId")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime?>("UpdatedAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("UpdatedByUserId")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<int>("WarehouseId")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OrderNumber")
+                        .IsUnique();
+
+                    b.HasIndex("Status");
+
+                    b.HasIndex("SupplierId");
+
+                    b.HasIndex("WarehouseId");
+
+                    b.ToTable("PurchaseOrders");
+                });
+
+            modelBuilder.Entity("ECommerceApp.Domain.Inventory.PurchaseOrderItem", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("CreatedByUserId")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("bit");
+
+                    b.Property<int>("ProductId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("ProductName")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<string>("ProductSku")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<int>("PurchaseOrderId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("QuantityOrdered")
+                        .HasColumnType("int");
+
+                    b.Property<int>("QuantityReceived")
+                        .HasColumnType("int");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.Property<decimal>("UnitCost")
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<DateTime?>("UpdatedAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("UpdatedByUserId")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ProductId");
+
+                    b.HasIndex("PurchaseOrderId");
+
+                    b.ToTable("PurchaseOrderItems");
+                });
+
+            modelBuilder.Entity("ECommerceApp.Domain.Inventory.StockAdjustment", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTime>("AdjustedAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("AdjustedByUserId")
+                        .HasMaxLength(450)
+                        .HasColumnType("nvarchar(450)");
+
+                    b.Property<int>("InventoryItemId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("QuantityDelta")
+                        .HasColumnType("int");
+
+                    b.Property<int>("QuantityOnHandAfter")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("InventoryItemId");
+
+                    b.ToTable("StockAdjustments");
+                });
+
+            modelBuilder.Entity("ECommerceApp.Domain.Inventory.StockMovement", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("CreatedByUserId")
+                        .HasMaxLength(450)
+                        .HasColumnType("nvarchar(450)");
+
+                    b.Property<int>("InventoryItemId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("MovementType")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime>("OccurredAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int>("QuantityChange")
+                        .HasColumnType("int");
+
+                    b.Property<int>("QuantityOnHandAfter")
+                        .HasColumnType("int");
+
+                    b.Property<int>("QuantityReservedAfter")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Reason")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<int?>("ReferenceId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("ReferenceType")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("InventoryItemId");
+
+                    b.HasIndex("OccurredAtUtc");
+
+                    b.ToTable("StockMovements");
+                });
+
+            modelBuilder.Entity("ECommerceApp.Domain.Inventory.Supplier", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("AddressLine1")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<string>("AddressLine2")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<string>("City")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<string>("Code")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<string>("ContactName")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<string>("Country")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("CreatedByUserId")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("Email")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<string>("Notes")
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)");
+
+                    b.Property<string>("Phone")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<string>("PostalCode")
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<string>("Region")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.Property<DateTime?>("UpdatedAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("UpdatedByUserId")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("Website")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Code")
+                        .IsUnique();
+
+                    b.ToTable("Suppliers");
+                });
+
+            modelBuilder.Entity("ECommerceApp.Domain.Inventory.SupplierProduct", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<decimal?>("CostPrice")
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<bool>("IsPreferred")
+                        .HasColumnType("bit");
+
+                    b.Property<int?>("LeadTimeDays")
+                        .HasColumnType("int");
+
+                    b.Property<int>("ProductId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("SupplierId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("SupplierSku")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ProductId");
+
+                    b.HasIndex("SupplierId", "ProductId")
+                        .IsUnique();
+
+                    b.ToTable("SupplierProducts");
+                });
+
+            modelBuilder.Entity("ECommerceApp.Domain.Inventory.Warehouse", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("AddressLine1")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<string>("AddressLine2")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<string>("City")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<string>("Code")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<string>("Country")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("CreatedByUserId")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("IsDefault")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<string>("PostalCode")
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<string>("Region")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.Property<DateTime?>("UpdatedAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("UpdatedByUserId")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Code")
+                        .IsUnique();
+
+                    b.ToTable("Warehouses");
+                });
+
+            modelBuilder.Entity("ECommerceApp.Domain.Marketing.HomePageBanner", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<int>("BannerType")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("CreatedByUserId")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<int>("DisplayOrder")
+                        .HasColumnType("int");
+
+                    b.Property<string>("ImagePath")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("LinkUrl")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.Property<string>("Subtitle")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<DateTime?>("UpdatedAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("UpdatedByUserId")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("BannerType", "DisplayOrder");
+
+                    b.ToTable("HomePageBanners");
                 });
 
             modelBuilder.Entity("ECommerceApp.Domain.Security.RefreshToken", b =>
@@ -1130,6 +1842,152 @@ namespace ECommerceApp.Infrastructure.Persistence.Migrations
                     b.Navigation("ProductVariant");
                 });
 
+            modelBuilder.Entity("ECommerceApp.Domain.Inventory.GoodsReceipt", b =>
+                {
+                    b.HasOne("ECommerceApp.Domain.Inventory.PurchaseOrder", "PurchaseOrder")
+                        .WithMany()
+                        .HasForeignKey("PurchaseOrderId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("PurchaseOrder");
+                });
+
+            modelBuilder.Entity("ECommerceApp.Domain.Inventory.GoodsReceiptItem", b =>
+                {
+                    b.HasOne("ECommerceApp.Domain.Inventory.GoodsReceipt", "GoodsReceipt")
+                        .WithMany("Items")
+                        .HasForeignKey("GoodsReceiptId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("ECommerceApp.Domain.Inventory.PurchaseOrderItem", "PurchaseOrderItem")
+                        .WithMany()
+                        .HasForeignKey("PurchaseOrderItemId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("GoodsReceipt");
+
+                    b.Navigation("PurchaseOrderItem");
+                });
+
+            modelBuilder.Entity("ECommerceApp.Domain.Inventory.InventoryItem", b =>
+                {
+                    b.HasOne("ECommerceApp.Domain.Catalog.Product", "Product")
+                        .WithMany()
+                        .HasForeignKey("ProductId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("ECommerceApp.Domain.Catalog.ProductVariant", "ProductVariant")
+                        .WithMany()
+                        .HasForeignKey("ProductVariantId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("ECommerceApp.Domain.Inventory.Warehouse", "Warehouse")
+                        .WithMany("InventoryItems")
+                        .HasForeignKey("WarehouseId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Product");
+
+                    b.Navigation("ProductVariant");
+
+                    b.Navigation("Warehouse");
+                });
+
+            modelBuilder.Entity("ECommerceApp.Domain.Inventory.InventoryReservation", b =>
+                {
+                    b.HasOne("ECommerceApp.Domain.Inventory.InventoryItem", "InventoryItem")
+                        .WithMany()
+                        .HasForeignKey("InventoryItemId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("InventoryItem");
+                });
+
+            modelBuilder.Entity("ECommerceApp.Domain.Inventory.PurchaseOrder", b =>
+                {
+                    b.HasOne("ECommerceApp.Domain.Inventory.Supplier", "Supplier")
+                        .WithMany()
+                        .HasForeignKey("SupplierId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("ECommerceApp.Domain.Inventory.Warehouse", "Warehouse")
+                        .WithMany()
+                        .HasForeignKey("WarehouseId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Supplier");
+
+                    b.Navigation("Warehouse");
+                });
+
+            modelBuilder.Entity("ECommerceApp.Domain.Inventory.PurchaseOrderItem", b =>
+                {
+                    b.HasOne("ECommerceApp.Domain.Catalog.Product", "Product")
+                        .WithMany()
+                        .HasForeignKey("ProductId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("ECommerceApp.Domain.Inventory.PurchaseOrder", "PurchaseOrder")
+                        .WithMany("Items")
+                        .HasForeignKey("PurchaseOrderId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Product");
+
+                    b.Navigation("PurchaseOrder");
+                });
+
+            modelBuilder.Entity("ECommerceApp.Domain.Inventory.StockAdjustment", b =>
+                {
+                    b.HasOne("ECommerceApp.Domain.Inventory.InventoryItem", "InventoryItem")
+                        .WithMany()
+                        .HasForeignKey("InventoryItemId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("InventoryItem");
+                });
+
+            modelBuilder.Entity("ECommerceApp.Domain.Inventory.StockMovement", b =>
+                {
+                    b.HasOne("ECommerceApp.Domain.Inventory.InventoryItem", "InventoryItem")
+                        .WithMany()
+                        .HasForeignKey("InventoryItemId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("InventoryItem");
+                });
+
+            modelBuilder.Entity("ECommerceApp.Domain.Inventory.SupplierProduct", b =>
+                {
+                    b.HasOne("ECommerceApp.Domain.Catalog.Product", "Product")
+                        .WithMany()
+                        .HasForeignKey("ProductId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("ECommerceApp.Domain.Inventory.Supplier", "Supplier")
+                        .WithMany("SupplierProducts")
+                        .HasForeignKey("SupplierId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Product");
+
+                    b.Navigation("Supplier");
+                });
+
             modelBuilder.Entity("Microsoft.AspNetCore.Identity.IdentityRoleClaim<string>", b =>
                 {
                     b.HasOne("Microsoft.AspNetCore.Identity.IdentityRole", null)
@@ -1210,6 +2068,26 @@ namespace ECommerceApp.Infrastructure.Persistence.Migrations
             modelBuilder.Entity("ECommerceApp.Domain.Catalog.ProductVariant", b =>
                 {
                     b.Navigation("AttributeValues");
+                });
+
+            modelBuilder.Entity("ECommerceApp.Domain.Inventory.GoodsReceipt", b =>
+                {
+                    b.Navigation("Items");
+                });
+
+            modelBuilder.Entity("ECommerceApp.Domain.Inventory.PurchaseOrder", b =>
+                {
+                    b.Navigation("Items");
+                });
+
+            modelBuilder.Entity("ECommerceApp.Domain.Inventory.Supplier", b =>
+                {
+                    b.Navigation("SupplierProducts");
+                });
+
+            modelBuilder.Entity("ECommerceApp.Domain.Inventory.Warehouse", b =>
+                {
+                    b.Navigation("InventoryItems");
                 });
 #pragma warning restore 612, 618
         }

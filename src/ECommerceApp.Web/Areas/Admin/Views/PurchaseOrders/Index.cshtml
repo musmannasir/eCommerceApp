@@ -1,0 +1,80 @@
+@model PagedResult<PurchaseOrderListItemDto>
+@{
+    ViewData["Title"] = "Purchase orders";
+    var search = ViewData["Search"] as string;
+    var status = ViewData["Status"] as string;
+    var statuses = new[] { "Draft", "Submitted", "Approved", "PartiallyReceived", "Received", "Cancelled" };
+}
+
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h1 class="h3 mb-0">Purchase orders</h1>
+    <a asp-action="Create" class="btn btn-primary">New purchase order</a>
+</div>
+
+@if (TempData["Message"] is string message)
+{
+    <div class="alert alert-success">@message</div>
+}
+@if (TempData["Error"] is string error)
+{
+    <div class="alert alert-danger">@error</div>
+}
+
+<form method="get" class="row g-2 mb-3">
+    <div class="col-auto">
+        <input type="search" name="search" value="@search" class="form-control" placeholder="Search order # or supplier" />
+    </div>
+    <div class="col-auto">
+        <select name="status" class="form-select">
+            <option value="">All statuses</option>
+            @foreach (var s in statuses)
+            {
+                <option value="@s" selected="@(s == status)">@s</option>
+            }
+        </select>
+    </div>
+    <div class="col-auto">
+        <button type="submit" class="btn btn-outline-primary">Filter</button>
+    </div>
+</form>
+
+<table class="table table-hover align-middle">
+    <thead>
+        <tr><th>Order #</th><th>Supplier</th><th>Warehouse</th><th>Items</th><th>Total cost</th><th>Status</th><th>Expected delivery</th><th></th></tr>
+    </thead>
+    <tbody>
+        @foreach (var order in Model.Items)
+        {
+            <tr>
+                <td>@order.OrderNumber</td>
+                <td>@order.SupplierName</td>
+                <td>@order.WarehouseName</td>
+                <td>@order.ItemCount</td>
+                <td>@order.TotalCost.ToString("0.00")</td>
+                <td><span class="badge text-bg-secondary">@order.Status</span></td>
+                <td>@(order.ExpectedDeliveryDate?.ToString("yyyy-MM-dd") ?? "-")</td>
+                <td class="text-end">
+                    <a asp-action="Edit" asp-route-id="@order.Id" class="btn btn-sm btn-outline-secondary">Open</a>
+                </td>
+            </tr>
+        }
+        @if (Model.Items.Count == 0)
+        {
+            <tr><td colspan="8" class="text-center text-muted py-4">No purchase orders found.</td></tr>
+        }
+    </tbody>
+</table>
+
+@if (Model.TotalPages > 1)
+{
+    <nav>
+        <ul class="pagination">
+            @for (var i = 1; i <= Model.TotalPages; i++)
+            {
+                <li class="page-item @(i == Model.Page ? "active" : "")">
+                    <a class="page-link" asp-action="Index" asp-route-page="@i" asp-route-search="@search" asp-route-status="@status">@i</a>
+                </li>
+            }
+        </ul>
+    </nav>
+}

@@ -1,0 +1,42 @@
+@model HomePageBannerFormViewModel
+@{
+    ViewData["Title"] = "Edit banner";
+}
+
+<h1 class="h3 mb-4">Edit banner</h1>
+
+@if (TempData["Message"] is string message)
+{
+    <div class="alert alert-success">@message</div>
+}
+@if (TempData["Error"] is string error)
+{
+    <div class="alert alert-danger">@error</div>
+}
+
+<div class="row">
+    <div class="col-md-8">
+        <form asp-action="Edit" method="post">
+            @await Html.PartialAsync("_Form", Model)
+        </form>
+    </div>
+    <div class="col-md-4">
+        <div class="card">
+            <div class="card-body">
+                <h2 class="h6">Image</h2>
+                @if (!string.IsNullOrEmpty(Model.ImagePath))
+                {
+                    <img src="@Model.ImagePath" alt="@Model.Title" class="img-fluid mb-2" style="max-height:160px" />
+                }
+                else
+                {
+                    <p class="text-muted small">No image uploaded yet - the banner will not appear on the home page until one is set.</p>
+                }
+                <form asp-action="UploadImage" asp-route-id="@Model.Id" method="post" enctype="multipart/form-data">
+                    <input type="file" name="file" class="form-control mb-2" accept=".jpg,.jpeg,.png,.webp" required />
+                    <button type="submit" class="btn btn-outline-primary btn-sm">Upload</button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>

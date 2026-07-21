@@ -179,6 +179,22 @@ public sealed class ProductService : IProductService
         return Result.Success(new PagedResult<ProductListItemDto>(items, totalCount, query.Page, query.PageSize));
     }
 
+    public async Task<Result<IReadOnlyList<ProductPickerItemDto>>> GetPickerListAsync(CancellationToken cancellationToken = default)
+    {
+        var products = await _dbContext.Products
+            .Where(p => p.IsActive)
+            .OrderBy(p => p.Name)
+            .AsNoTracking()
+            .Select(p => new ProductPickerItemDto(
+                p.Id,
+                p.Name,
+                p.BaseSKU,
+                p.Variants.Where(v => v.IsActive).Select(v => new ProductVariantPickerItemDto(v.Id, v.SKU)).ToList()))
+            .ToListAsync(cancellationToken);
+
+        return Result.Success<IReadOnlyList<ProductPickerItemDto>>(products);
+    }
+
     public async Task<Result> PublishAsync(int id, CancellationToken cancellationToken = default)
     {
         var product = await _dbContext.Products.FirstOrDefaultAsync(p => p.Id == id, cancellationToken);

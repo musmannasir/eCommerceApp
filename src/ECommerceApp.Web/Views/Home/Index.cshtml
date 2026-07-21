@@ -1,10 +1,164 @@
+@model HomePageDto
 @{
     ViewData["Title"] = "Home";
 }
 
-<div class="text-center py-5">
-    <h1 class="display-4">Welcome</h1>
-    <p class="lead text-muted">
-        The storefront home page, catalog, and search will be built in Milestone 4.
-    </p>
-</div>
+@if (Model.HeroBanners.Count > 0)
+{
+    <div id="heroCarousel" class="carousel slide mb-4" data-bs-ride="carousel">
+        <div class="carousel-inner rounded overflow-hidden">
+            @for (var i = 0; i < Model.HeroBanners.Count; i++)
+            {
+                var banner = Model.HeroBanners[i];
+                <div class="carousel-item @(i == 0 ? "active" : "")">
+                    @if (!string.IsNullOrEmpty(banner.LinkUrl))
+                    {
+                        <a href="@banner.LinkUrl">
+                            <img src="@banner.ImagePath" class="d-block w-100" alt="@banner.Title" style="max-height:360px;object-fit:cover" />
+                        </a>
+                    }
+                    else
+                    {
+                        <img src="@banner.ImagePath" class="d-block w-100" alt="@banner.Title" style="max-height:360px;object-fit:cover" />
+                    }
+                    <div class="carousel-caption d-none d-md-block bg-dark bg-opacity-50 rounded">
+                        <h5>@banner.Title</h5>
+                        @if (!string.IsNullOrEmpty(banner.Subtitle))
+                        {
+                            <p>@banner.Subtitle</p>
+                        }
+                    </div>
+                </div>
+            }
+        </div>
+        @if (Model.HeroBanners.Count > 1)
+        {
+            <button class="carousel-control-prev" type="button" data-bs-target="#heroCarousel" data-bs-slide="prev">
+                <span class="carousel-control-prev-icon" aria-hidden="true"></span>
+            </button>
+            <button class="carousel-control-next" type="button" data-bs-target="#heroCarousel" data-bs-slide="next">
+                <span class="carousel-control-next-icon" aria-hidden="true"></span>
+            </button>
+        }
+    </div>
+}
+else
+{
+    <div class="bg-light rounded p-5 text-center mb-4">
+        <h1 class="h2">Welcome</h1>
+        <p class="text-muted mb-0">Hero banners will appear here once they're added in the Admin area.</p>
+    </div>
+}
+
+@if (Model.FeaturedCategories.Count > 0)
+{
+    <section class="mb-5">
+        <h2 class="h4 mb-3">Featured categories</h2>
+        <div class="row row-cols-2 row-cols-md-3 row-cols-lg-6 g-3">
+            @foreach (var category in Model.FeaturedCategories)
+            {
+                <div class="col">
+                    <a href="/Category/@category.Slug" class="text-decoration-none text-reset">
+                        <div class="card h-100 text-center">
+                            @if (!string.IsNullOrEmpty(category.ImagePath))
+                            {
+                                <img src="@category.ImagePath" class="card-img-top" alt="@category.Name" style="height:100px;object-fit:cover" />
+                            }
+                            <div class="card-body py-2">
+                                <div class="small fw-semibold">@category.Name</div>
+                            </div>
+                        </div>
+                    </a>
+                </div>
+            }
+        </div>
+    </section>
+}
+
+@if (Model.FeaturedProducts.Count > 0)
+{
+    <section class="mb-5">
+        <h2 class="h4 mb-3">Featured products</h2>
+        <div class="row row-cols-2 row-cols-md-3 row-cols-lg-4 g-3">
+            @foreach (var product in Model.FeaturedProducts)
+            {
+                <div class="col">@await Html.PartialAsync("_ProductCard", product)</div>
+            }
+        </div>
+    </section>
+}
+
+@if (Model.NewArrivals.Count > 0)
+{
+    <section class="mb-5">
+        <h2 class="h4 mb-3">New arrivals</h2>
+        <div class="row row-cols-2 row-cols-md-3 row-cols-lg-4 g-3">
+            @foreach (var product in Model.NewArrivals)
+            {
+                <div class="col">@await Html.PartialAsync("_ProductCard", product)</div>
+            }
+        </div>
+    </section>
+}
+
+@if (Model.DiscountedProducts.Count > 0)
+{
+    <section class="mb-5">
+        <h2 class="h4 mb-3">On sale</h2>
+        <div class="row row-cols-2 row-cols-md-3 row-cols-lg-4 g-3">
+            @foreach (var product in Model.DiscountedProducts)
+            {
+                <div class="col">@await Html.PartialAsync("_ProductCard", product)</div>
+            }
+        </div>
+    </section>
+}
+
+@if (Model.PromoBanners.Count > 0)
+{
+    <section class="mb-5">
+        <div class="row g-3">
+            @foreach (var banner in Model.PromoBanners)
+            {
+                <div class="col-md-6">
+                    <div class="card">
+                        @if (!string.IsNullOrEmpty(banner.LinkUrl))
+                        {
+                            <a href="@banner.LinkUrl">
+                                <img src="@banner.ImagePath" class="card-img-top" alt="@banner.Title" style="max-height:200px;object-fit:cover" />
+                            </a>
+                        }
+                        else
+                        {
+                            <img src="@banner.ImagePath" class="card-img-top" alt="@banner.Title" style="max-height:200px;object-fit:cover" />
+                        }
+                        <div class="card-body">
+                            <h3 class="h6">@banner.Title</h3>
+                            @if (!string.IsNullOrEmpty(banner.Subtitle))
+                            {
+                                <p class="small text-muted mb-0">@banner.Subtitle</p>
+                            }
+                        </div>
+                    </div>
+                </div>
+            }
+        </div>
+    </section>
+}
+
+@* Best sellers depend on real order history, which doesn't exist until Milestone 9;
+   recommendations and recently-viewed are explicitly Milestone 5 placeholders per the brief. *@
+<section class="mb-5">
+    <h2 class="h4 mb-3">Best sellers</h2>
+    <p class="text-muted">Best sellers will appear here once orders start coming in.</p>
+</section>
+
+<section class="mb-5">
+    <h2 class="h4 mb-3">Recommended for you</h2>
+    <p class="text-muted">Personalized recommendations are coming soon.</p>
+</section>
+
+<section class="mb-5">
+    <h2 class="h4 mb-3">Recently viewed</h2>
+    <p class="text-muted">Products you view will show up here.</p>
+</section>

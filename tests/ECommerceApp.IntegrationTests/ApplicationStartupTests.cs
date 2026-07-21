@@ -1,38 +1,32 @@
-using Microsoft.AspNetCore.Mvc.Testing;
-using Microsoft.Extensions.Configuration;
+using ECommerceApp.IntegrationTests.TestSupport;
 using FluentAssertions;
 
 namespace ECommerceApp.IntegrationTests;
 
 /// <summary>
 /// Confirms the whole application boots end-to-end through the real ASP.NET Core
-/// pipeline (DI container, middleware, routing) without requiring a reachable
-/// SQL Server instance - a placeholder connection string is enough to satisfy
-/// service registration for these tests.
+/// pipeline (DI container, middleware, routing). Originally these tests ran
+/// against a placeholder, unreachable connection string, since nothing on the
+/// request paths under test touched the database. That stopped being true at
+/// Milestone 4.1: the public layout's category nav (rendered on every page,
+/// including the 404 and login pages) and the home page itself now query real
+/// catalog data - so this class now shares the same real test-database fixture
+/// every other integration test class uses.
 /// </summary>
-public class ApplicationStartupTests : IClassFixture<WebApplicationFactory<Web.Program>>
+[Collection(AuthTestCollection.Name)]
+public class ApplicationStartupTests
 {
-    private readonly WebApplicationFactory<Web.Program> _factory;
+    private readonly AuthTestFixture _fixture;
 
-    public ApplicationStartupTests(WebApplicationFactory<Web.Program> factory)
+    public ApplicationStartupTests(AuthTestFixture fixture)
     {
-        _factory = factory.WithWebHostBuilder(builder =>
-        {
-            builder.ConfigureAppConfiguration((_, configBuilder) =>
-            {
-                configBuilder.AddInMemoryCollection(new Dictionary<string, string?>
-                {
-                    ["ConnectionStrings:DefaultConnection"] =
-                        "Server=localhost;Database=ECommerceAppTestDb;Trusted_Connection=True;TrustServerCertificate=True;",
-                });
-            });
-        });
+        _fixture = fixture;
     }
 
     [Fact]
     public async Task Home_page_returns_success()
     {
-        var client = _factory.CreateClient();
+        var client = _fixture.Factory.CreateClient();
 
         var response = await client.GetAsync("/");
 
@@ -42,7 +36,7 @@ public class ApplicationStartupTests : IClassFixture<WebApplicationFactory<Web.P
     [Fact]
     public async Task Health_live_endpoint_reports_healthy_without_touching_the_database()
     {
-        var client = _factory.CreateClient();
+        var client = _fixture.Factory.CreateClient();
 
         var response = await client.GetAsync("/health/live");
 
@@ -52,7 +46,7 @@ public class ApplicationStartupTests : IClassFixture<WebApplicationFactory<Web.P
     [Fact]
     public async Task Unknown_route_renders_the_branded_not_found_page()
     {
-        var client = _factory.CreateClient();
+        var client = _fixture.Factory.CreateClient();
 
         var response = await client.GetAsync("/this-route-does-not-exist");
 
@@ -65,7 +59,7 @@ public class ApplicationStartupTests : IClassFixture<WebApplicationFactory<Web.P
         // As of Milestone 1 the Admin Area requires authentication; see
         // ECommerceApp.IntegrationTests.Security.AdminAreaAuthorizationTests for
         // the full authorization matrix against the real test database.
-        var client = _factory.CreateClient();
+        var client = _fixture.Factory.CreateClient();
 
         var response = await client.GetAsync("/Admin/Home/Index");
         var body = await response.Content.ReadAsStringAsync();

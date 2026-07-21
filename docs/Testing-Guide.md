@@ -6,9 +6,9 @@
 |---|---|
 | `tests/ECommerceApp.Domain.Tests` | Pure unit tests for domain entities, value objects, and `Result`/`Error`. No I/O. |
 | `tests/ECommerceApp.Application.Tests` | Unit tests for FluentValidation validators (`RegisterRequestValidator`, `ChangePasswordRequestValidator`, etc.). |
-| `tests/ECommerceApp.Infrastructure.Tests` | EF Core behavior tests (InMemory provider), `AuthService` tests against a real Identity stack (`UserManager`/`SignInManager`/`RoleManager`) backed by InMemory - see `AuthServiceTestHarness` - and catalog service tests (`CatalogTestHarness`) covering Category/Brand/Product/variant creation, duplicate slugs/SKUs/combinations, circular category parents, soft delete, pagination, and publication rules. Plus `LocalFileStorageTests` (real disk I/O) and `ImageSignatureDetectorTests` (magic-byte detection). |
+| `tests/ECommerceApp.Infrastructure.Tests` | EF Core behavior tests (InMemory provider), `AuthService` tests against a real Identity stack (`UserManager`/`SignInManager`/`RoleManager`) backed by InMemory - see `AuthServiceTestHarness` - catalog service tests (`CatalogTestHarness`, shared with `HomePageBannerServiceTests`/`HomePageServiceTests`/`CatalogBrowseServiceTests`/`CatalogBrowseFilterTests`) covering Category/Brand/Product/variant creation, duplicate slugs/SKUs/combinations, circular category parents, soft delete, pagination, publication rules, home-page-banner CRUD, home-page section composition (unpublished/inactive product exclusion, featured/new-arrival/discounted filtering, imageless-banner exclusion), catalog browsing (pagination, unpublished/inactive exclusion, out-of-stock baseline non-exclusion, category-descendant inclusion, brand/search filtering, unknown-slug failures), and catalog filtering/sorting/suggestions (search matching across brand/category, search-input safety with special characters, every filter individually and combined, every sort option including relevance ranking, suggestions matching and empty-term handling), and inventory service tests (`InventoryTestHarness`, shared with `SupplierServiceTests`/`PurchaseOrderServiceTests`) covering opening stock, adjustments, reservation create/release, overselling/backorder rules, low/out-of-stock status detection, supplier CRUD/soft-delete, supplier-product linking, and the full purchase-order lifecycle (draft→submit→approve→receive, full/partial receipt, over-receipt rejection with/without an audited override, cancellation-window rules). Plus `LocalFileStorageTests` (real disk I/O) and `ImageSignatureDetectorTests` (magic-byte detection). |
 | `tests/ECommerceApp.Web.Tests` | Unit tests for controllers, services, and middleware in isolation (no real HTTP host). |
-| `tests/ECommerceApp.IntegrationTests` | Architecture/dependency-rule tests, full-pipeline smoke tests, and full-stack tests against a real SQL Server test database via `WebApplicationFactory<Program>` - admin-area authorization (auth and catalog), open-redirect protection, the JWT API surface, the MVC change-password flow, RowVersion concurrency conflicts, and a complete "create a product through the Admin UI" flow (`ProductAdminFlowTests`). |
+| `tests/ECommerceApp.IntegrationTests` | Architecture/dependency-rule tests, full-pipeline smoke tests, and full-stack tests against a real SQL Server test database via `WebApplicationFactory<Program>` - admin-area authorization (auth, catalog, inventory, suppliers, purchase orders, and home page banners), storefront authorization (a customer browsing the public site cannot reach catalog admin), the four public catalog listing routes end-to-end including every sort option, a fully-combined filter request, and the JSON suggestions endpoint (`CatalogBrowseFlowTests` - specifically proves the product-card EF projection and filter/sort query shapes translate against real SQL Server, not just the InMemory provider), open-redirect protection, the JWT API surface, the MVC change-password flow, RowVersion concurrency conflicts (catalog, inventory, and purchase-order items), and complete admin-UI flows (`ProductAdminFlowTests`, `SupplierAuthorizationTests`). |
 
 ## Running tests
 
@@ -31,10 +31,14 @@ dotnet test --collect:"XPlat Code Coverage" --results-directory ./TestResults
   `AuthWebApplicationFactory`), which apply migrations and wipe the
   auth-related tables once per test collection
   (`AuthTestFixture.InitializeAsync`) for a clean, deterministic slate.
-- The Foundation-level smoke tests in `ApplicationStartupTests` still don't
-  need a reachable database at all: they override
-  `ConnectionStrings:DefaultConnection` with a placeholder purely to satisfy
-  DI service registration.
+- The Foundation-level smoke tests in `ApplicationStartupTests` originally
+  didn't need a reachable database (a placeholder connection string was
+  enough to satisfy DI registration). That stopped being true at Milestone
+  4.1: the public layout's category nav and the home page itself now query
+  real catalog data on every request, so this class was moved onto the same
+  shared `AuthTestFixture`/`ECommerceAppTestDb` every other integration test
+  class uses. See `Architecture.md`'s "Storefront home page composition"
+  section for the full reasoning.
 - From Milestone 18 onward, the full test-database bootstrap must also
   actively reject any connection string that looks like the dev or
   production database name.
@@ -86,6 +90,24 @@ tested via `WebApplicationFactory` with its defaults, can hide bugs that only
 show up under the conditions the feature exists for (concurrent real users,
 or genuinely varying configuration). Prefer running the whole suite, not
 just the new tests, before calling a milestone done.
+
+## EF Core InMemory provider does not support transactions (Milestone 3.1)
+
+`InventoryService` opens an explicit `Database.BeginTransactionAsync()` for
+every multi-write operation (recording opening stock, adjusting stock,
+reserving/releasing stock), per the brief's "use transactions ... throughout"
+requirement for inventory. The EF Core InMemory provider used by
+`Infrastructure.Tests` throws `InvalidOperationException` the instant one is
+requested - not documented anywhere obvious, only discovered by running the
+new tests and reading the stack trace. A misleadingly "passing" one-off probe
+test earlier in development returned success without exercising this path at
+all (it hit an early-exit validation branch before reaching the transaction
+call), which is itself a small lesson: a probe test that doesn't fail is not
+the same as a probe test that proves the code path was exercised. Fixed by
+gating transaction creation on `_dbContext.Database.IsRelational()` - see
+`Database-Design.md`'s "Explicit transactions and the EF Core InMemory
+provider" section. Any future service that opens an explicit transaction and
+is unit-tested against the InMemory provider will need the same guard.
 
 ## Test-process parallelism
 

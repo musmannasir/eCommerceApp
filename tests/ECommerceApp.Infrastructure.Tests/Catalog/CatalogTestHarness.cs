@@ -1,4 +1,6 @@
 using ECommerceApp.Infrastructure.Catalog;
+using ECommerceApp.Infrastructure.Marketing;
+using ECommerceApp.Infrastructure.Storefront;
 using ECommerceApp.Infrastructure.Tests.TestSupport;
 using Microsoft.EntityFrameworkCore;
 
@@ -14,6 +16,9 @@ public sealed class CatalogTestHarness : IDisposable
     public BrandService BrandService { get; }
     public ProductAttributeService AttributeService { get; }
     public ProductService ProductService { get; }
+    public HomePageBannerService HomePageBannerService { get; }
+    public HomePageService HomePageService { get; }
+    public CatalogBrowseService CatalogBrowseService { get; }
 
     public CatalogTestHarness()
     {
@@ -29,6 +34,9 @@ public sealed class CatalogTestHarness : IDisposable
         BrandService = new BrandService(DbContext);
         AttributeService = new ProductAttributeService(DbContext);
         ProductService = new ProductService(DbContext, FileStorage, Clock);
+        HomePageBannerService = new HomePageBannerService(DbContext);
+        HomePageService = new HomePageService(DbContext);
+        CatalogBrowseService = new CatalogBrowseService(DbContext);
     }
 
     public void Dispose() => DbContext.Dispose();

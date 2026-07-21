@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using ECommerceApp.Application.Storefront;
 using Microsoft.AspNetCore.Mvc;
 using ECommerceApp.Web.Models;
 
@@ -6,9 +7,17 @@ namespace ECommerceApp.Web.Controllers;
 
 public class HomeController : Controller
 {
-    public IActionResult Index()
+    private readonly IHomePageService _homePageService;
+
+    public HomeController(IHomePageService homePageService)
     {
-        return View();
+        _homePageService = homePageService;
+    }
+
+    public async Task<IActionResult> Index()
+    {
+        var homePage = await _homePageService.GetHomePageAsync(HttpContext.RequestAborted);
+        return View(homePage);
     }
 
     public IActionResult Privacy()

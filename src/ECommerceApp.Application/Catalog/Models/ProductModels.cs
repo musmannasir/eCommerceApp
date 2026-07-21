@@ -19,6 +19,10 @@ public record ProductSpecificationDto(int Id, string Name, string Value, int Dis
 
 public record ProductTagRefDto(int Id, string Name);
 
+public record ProductVariantPickerItemDto(int Id, string SKU);
+
+public record ProductPickerItemDto(int Id, string Name, string BaseSKU, IReadOnlyList<ProductVariantPickerItemDto> Variants);
+
 public record ProductListItemDto(
     int Id,
     string Name,

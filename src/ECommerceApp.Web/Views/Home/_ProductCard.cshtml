@@ -1,0 +1,40 @@
+@model HomeProductCardDto
+@* The product itself is non-clickable: product detail pages don't exist until
+   Milestone 5. The brand name links out, though - brand pages exist as of
+   Milestone 4.2. *@
+<div class="card h-100">
+    @if (!string.IsNullOrEmpty(Model.ImagePath))
+    {
+        <img src="@Model.ImagePath" class="card-img-top" alt="@Model.Name" loading="lazy" style="height:160px;object-fit:cover" />
+    }
+    else
+    {
+        <div class="bg-light d-flex align-items-center justify-content-center text-muted small" style="height:160px">No image</div>
+    }
+    <div class="card-body">
+        @if (!string.IsNullOrEmpty(Model.BrandName))
+        {
+            @if (!string.IsNullOrEmpty(Model.BrandSlug))
+            {
+                <div class="text-muted small"><a href="/Brand/@Model.BrandSlug" class="text-muted">@Model.BrandName</a></div>
+            }
+            else
+            {
+                <div class="text-muted small">@Model.BrandName</div>
+            }
+        }
+        <div class="fw-semibold text-truncate" title="@Model.Name">@Model.Name</div>
+        <div>
+            <span class="fw-bold">@Model.SellingPrice.ToString("0.00")</span>
+            @if (Model.CompareAtPrice.HasValue)
+            {
+                <span class="text-muted text-decoration-line-through small ms-1">@Model.CompareAtPrice.Value.ToString("0.00")</span>
+                <span class="badge text-bg-danger ms-1">-@(Model.DiscountPercent)%</span>
+            }
+        </div>
+        @if (Model.IsOutOfStock)
+        {
+            <span class="badge text-bg-secondary mt-1">Out of stock</span>
+        }
+    </div>
+</div>

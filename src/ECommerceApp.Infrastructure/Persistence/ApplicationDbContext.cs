@@ -1,6 +1,8 @@
 using ECommerceApp.Application.Common.Interfaces;
 using ECommerceApp.Domain.Catalog;
 using ECommerceApp.Domain.Common;
+using ECommerceApp.Domain.Inventory;
+using ECommerceApp.Domain.Marketing;
 using ECommerceApp.Domain.Security;
 using ECommerceApp.Infrastructure.Identity;
 using Microsoft.AspNetCore.Identity;
@@ -46,6 +48,19 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser, IdentityR
     public DbSet<ProductVariant> ProductVariants => Set<ProductVariant>();
     public DbSet<ProductVariantAttributeValue> ProductVariantAttributeValues => Set<ProductVariantAttributeValue>();
     public DbSet<ProductSpecification> ProductSpecifications => Set<ProductSpecification>();
+
+    public DbSet<Warehouse> Warehouses => Set<Warehouse>();
+    public DbSet<InventoryItem> InventoryItems => Set<InventoryItem>();
+    public DbSet<StockMovement> StockMovements => Set<StockMovement>();
+    public DbSet<StockAdjustment> StockAdjustments => Set<StockAdjustment>();
+    public DbSet<InventoryReservation> InventoryReservations => Set<InventoryReservation>();
+    public DbSet<Supplier> Suppliers => Set<Supplier>();
+    public DbSet<SupplierProduct> SupplierProducts => Set<SupplierProduct>();
+    public DbSet<PurchaseOrder> PurchaseOrders => Set<PurchaseOrder>();
+    public DbSet<PurchaseOrderItem> PurchaseOrderItems => Set<PurchaseOrderItem>();
+    public DbSet<GoodsReceipt> GoodsReceipts => Set<GoodsReceipt>();
+    public DbSet<GoodsReceiptItem> GoodsReceiptItems => Set<GoodsReceiptItem>();
+    public DbSet<HomePageBanner> HomePageBanners => Set<HomePageBanner>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

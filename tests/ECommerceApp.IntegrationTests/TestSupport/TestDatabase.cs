@@ -29,6 +29,19 @@ public static class TestDatabase
             DELETE FROM AspNetUsers;
             DELETE FROM AspNetRoles;
 
+            DELETE FROM GoodsReceiptItems;
+            DELETE FROM GoodsReceipts;
+            DELETE FROM PurchaseOrderItems;
+            DELETE FROM PurchaseOrders;
+            DELETE FROM InventoryReservations;
+            DELETE FROM StockMovements;
+            DELETE FROM StockAdjustments;
+            DELETE FROM InventoryItems;
+            DELETE FROM Warehouses;
+            DELETE FROM SupplierProducts;
+            DELETE FROM Suppliers;
+            DELETE FROM HomePageBanners;
+
             DELETE FROM ProductVariantAttributeValues;
             DELETE FROM ProductImages;
             DELETE FROM ProductVariants;
@@ -44,6 +57,18 @@ public static class TestDatabase
 
             -- DELETE does not reset IDENTITY seeds (unlike TRUNCATE, which these FKs block);
             -- reset them explicitly so ids stay small and predictable across repeated local runs.
+            DBCC CHECKIDENT ('InventoryReservations', RESEED, 0);
+            DBCC CHECKIDENT ('StockMovements', RESEED, 0);
+            DBCC CHECKIDENT ('StockAdjustments', RESEED, 0);
+            DBCC CHECKIDENT ('InventoryItems', RESEED, 0);
+            DBCC CHECKIDENT ('Warehouses', RESEED, 0);
+            DBCC CHECKIDENT ('SupplierProducts', RESEED, 0);
+            DBCC CHECKIDENT ('Suppliers', RESEED, 0);
+            DBCC CHECKIDENT ('HomePageBanners', RESEED, 0);
+            DBCC CHECKIDENT ('GoodsReceiptItems', RESEED, 0);
+            DBCC CHECKIDENT ('GoodsReceipts', RESEED, 0);
+            DBCC CHECKIDENT ('PurchaseOrderItems', RESEED, 0);
+            DBCC CHECKIDENT ('PurchaseOrders', RESEED, 0);
             DBCC CHECKIDENT ('ProductVariantAttributeValues', RESEED, 0);
             DBCC CHECKIDENT ('ProductImages', RESEED, 0);
             DBCC CHECKIDENT ('ProductVariants', RESEED, 0);

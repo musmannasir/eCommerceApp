@@ -1,0 +1,110 @@
+@using System.Text.Json
+@model OpeningStockFormViewModel
+@{
+    ViewData["Title"] = "Record Opening Stock";
+    var productsJson = JsonSerializer.Serialize(Model.AvailableProducts);
+}
+
+<h1 class="h3 mb-4">Record Opening Stock</h1>
+<p class="text-muted">
+    Records the first stock count for a product (or a specific variant, if the product has any) in a warehouse.
+    Once tracked, use "Adjust" from the inventory overview to change the quantity.
+</p>
+
+<div asp-validation-summary="ModelOnly" class="text-danger"></div>
+
+<form asp-action="OpeningStock" method="post" id="opening-stock-form">
+    <div class="row g-3">
+        <div class="col-md-4">
+            <label asp-for="WarehouseId" class="form-label"></label>
+            <select asp-for="WarehouseId" class="form-select">
+                <option value="">Select a warehouse</option>
+                @foreach (var warehouse in Model.AvailableWarehouses)
+                {
+                    <option value="@warehouse.Id">@warehouse.Name</option>
+                }
+            </select>
+            <span asp-validation-for="WarehouseId" class="text-danger"></span>
+        </div>
+        <div class="col-md-4">
+            <label asp-for="ProductId" class="form-label"></label>
+            <select asp-for="ProductId" id="product-select" class="form-select">
+                <option value="">Select a product</option>
+                @foreach (var product in Model.AvailableProducts)
+                {
+                    <option value="@product.Id">@product.Name (@product.BaseSKU)</option>
+                }
+            </select>
+            <span asp-validation-for="ProductId" class="text-danger"></span>
+        </div>
+        <div class="col-md-4">
+            <label asp-for="ProductVariantId" class="form-label"></label>
+            <select asp-for="ProductVariantId" id="variant-select" class="form-select">
+                <option value="">(No variants - track the product itself)</option>
+            </select>
+        </div>
+        <div class="col-md-3">
+            <label asp-for="Quantity" class="form-label"></label>
+            <input asp-for="Quantity" class="form-control" />
+            <span asp-validation-for="Quantity" class="text-danger"></span>
+        </div>
+        <div class="col-md-3">
+            <label asp-for="ReorderLevel" class="form-label"></label>
+            <input asp-for="ReorderLevel" class="form-control" />
+        </div>
+        <div class="col-md-3">
+            <label asp-for="ReorderQuantity" class="form-label"></label>
+            <input asp-for="ReorderQuantity" class="form-control" />
+        </div>
+        <div class="col-md-3 d-flex align-items-end">
+            <div class="form-check">
+                <input asp-for="AllowBackorder" class="form-check-input" />
+                <label asp-for="AllowBackorder" class="form-check-label"></label>
+            </div>
+        </div>
+    </div>
+
+    <div class="mt-4">
+        <button type="submit" class="btn btn-primary">Record opening stock</button>
+        <a asp-action="Index" class="btn btn-outline-secondary">Cancel</a>
+    </div>
+</form>
+
+@section Scripts {
+    <script>
+        (function () {
+            var products = @Html.Raw(productsJson);
+            var productSelect = document.getElementById('product-select');
+            var variantSelect = document.getElementById('variant-select');
+
+            function refreshVariants() {
+                var selectedId = productSelect.value ? parseInt(productSelect.value, 10) : null;
+                var product = products.find(function (p) { return p.id === selectedId; });
+
+                variantSelect.innerHTML = '';
+                if (!product || !product.variants || product.variants.length === 0) {
+                    var noneOption = document.createElement('option');
+                    noneOption.value = '';
+                    noneOption.textContent = '(No variants - track the product itself)';
+                    variantSelect.appendChild(noneOption);
+                    return;
+                }
+
+                var pick = document.createElement('option');
+                pick.value = '';
+                pick.textContent = 'Select a variant';
+                variantSelect.appendChild(pick);
+
+                product.variants.forEach(function (v) {
+                    var option = document.createElement('option');
+                    option.value = v.id;
+                    option.textContent = v.sku;
+                    variantSelect.appendChild(option);
+                });
+            }
+
+            productSelect.addEventListener('change', refreshVariants);
+            refreshVariants();
+        })();
+    </script>
+}
