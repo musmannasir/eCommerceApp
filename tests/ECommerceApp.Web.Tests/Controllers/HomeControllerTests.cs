@@ -1,23 +1,33 @@
+using ECommerceApp.Application.Storefront;
+using ECommerceApp.Application.Storefront.Models;
 using ECommerceApp.Web.Controllers;
 using FluentAssertions;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using Moq;
 
 namespace ECommerceApp.Web.Tests.Controllers;
 
 public class HomeControllerTests
 {
-    private static HomeController CreateController() => new()
+    private static HomeController CreateController()
     {
-        ControllerContext = new ControllerContext { HttpContext = new DefaultHttpContext() },
-    };
+        var homePageService = new Mock<IHomePageService>();
+        homePageService.Setup(s => s.GetHomePageAsync(It.IsAny<CancellationToken>())).ReturnsAsync(
+            new HomePageDto([], [], [], [], [], []));
+
+        return new HomeController(homePageService.Object)
+        {
+            ControllerContext = new ControllerContext { HttpContext = new DefaultHttpContext() },
+        };
+    }
 
     [Fact]
-    public void Index_returns_the_default_view()
+    public async Task Index_returns_the_default_view()
     {
         var controller = CreateController();
 
-        var result = controller.Index();
+        var result = await controller.Index();
 
         result.Should().BeOfType<ViewResult>().Which.ViewName.Should().BeNull();
     }

@@ -1,0 +1,71 @@
+@model IReadOnlyList<WarehouseDto>
+@{
+    ViewData["Title"] = "Warehouses";
+}
+
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h1 class="h3 mb-0">Warehouses</h1>
+    <a asp-action="Create" class="btn btn-primary">New warehouse</a>
+</div>
+
+@if (TempData["Message"] is string message)
+{
+    <div class="alert alert-success">@message</div>
+}
+@if (TempData["Error"] is string error)
+{
+    <div class="alert alert-danger">@error</div>
+}
+
+<table class="table table-hover align-middle">
+    <thead>
+        <tr>
+            <th>Name</th>
+            <th>Code</th>
+            <th>City / Country</th>
+            <th>Default</th>
+            <th>Status</th>
+            <th></th>
+        </tr>
+    </thead>
+    <tbody>
+        @foreach (var warehouse in Model)
+        {
+            <tr>
+                <td>@warehouse.Name</td>
+                <td class="text-muted small">@warehouse.Code</td>
+                <td>@(string.Join(", ", new[] { warehouse.City, warehouse.Country }.Where(s => !string.IsNullOrWhiteSpace(s))))</td>
+                <td>@(warehouse.IsDefault ? "★" : "")</td>
+                <td>
+                    @if (warehouse.IsActive)
+                    {
+                        <span class="badge text-bg-success">Active</span>
+                    }
+                    else
+                    {
+                        <span class="badge text-bg-secondary">Inactive</span>
+                    }
+                </td>
+                <td class="text-end">
+                    <a asp-action="Edit" asp-route-id="@warehouse.Id" class="btn btn-sm btn-outline-secondary">Edit</a>
+                    @if (warehouse.IsActive)
+                    {
+                        <form asp-action="Deactivate" asp-route-id="@warehouse.Id" method="post" class="d-inline">
+                            <button type="submit" class="btn btn-sm btn-outline-warning">Deactivate</button>
+                        </form>
+                    }
+                    else
+                    {
+                        <form asp-action="Activate" asp-route-id="@warehouse.Id" method="post" class="d-inline">
+                            <button type="submit" class="btn btn-sm btn-outline-success">Activate</button>
+                        </form>
+                    }
+                </td>
+            </tr>
+        }
+        @if (Model.Count == 0)
+        {
+            <tr><td colspan="6" class="text-center text-muted py-4">No warehouses found.</td></tr>
+        }
+    </tbody>
+</table>

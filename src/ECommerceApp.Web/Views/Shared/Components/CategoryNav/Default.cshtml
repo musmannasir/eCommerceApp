@@ -1,0 +1,22 @@
+@model IReadOnlyList<CategoryTreeNodeDto>
+@* Real links as of Milestone 4.2 - /Category/{slug} includes this category's
+   active descendants too, so a parent link is a meaningful destination even
+   though only the top-level name is shown here. *@
+<ul class="nav small py-2">
+    @if (Model.Count == 0)
+    {
+        <li class="nav-item"><span class="nav-link disabled px-2" aria-disabled="true">No categories yet</span></li>
+    }
+    else
+    {
+        foreach (var category in Model)
+        {
+            <li class="nav-item">
+                <a class="nav-link px-2" href="/Category/@category.Slug" title="@(category.Children.Count > 0 ? $"Includes {category.Children.Count} subcategories" : null)">
+                    @category.Name
+                </a>
+            </li>
+        }
+    }
+    <li class="nav-item"><a class="nav-link px-2" href="/Brands">Brands</a></li>
+</ul>

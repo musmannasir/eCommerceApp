@@ -33,6 +33,7 @@ try
 
     builder.Services.AddControllersWithViews();
     builder.Services.AddHttpContextAccessor();
+    builder.Services.AddMemoryCache();
 
     builder.Services.AddApplication();
     builder.Services.AddInfrastructure(builder.Configuration);

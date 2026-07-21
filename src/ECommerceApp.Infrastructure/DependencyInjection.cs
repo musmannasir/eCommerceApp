@@ -2,14 +2,20 @@ using ECommerceApp.Application.Auth;
 using ECommerceApp.Application.Catalog;
 using ECommerceApp.Application.Common.Interfaces;
 using ECommerceApp.Application.Common.Options;
+using ECommerceApp.Application.Inventory;
+using ECommerceApp.Application.Marketing;
+using ECommerceApp.Application.Storefront;
 using ECommerceApp.Infrastructure.Catalog;
 using ECommerceApp.Infrastructure.Common;
 using ECommerceApp.Infrastructure.Email;
 using ECommerceApp.Infrastructure.HealthChecks;
 using ECommerceApp.Infrastructure.Identity;
+using ECommerceApp.Infrastructure.Inventory;
+using ECommerceApp.Infrastructure.Marketing;
 using ECommerceApp.Infrastructure.Persistence;
 using ECommerceApp.Infrastructure.Security;
 using ECommerceApp.Infrastructure.Storage;
+using ECommerceApp.Infrastructure.Storefront;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
@@ -78,6 +84,12 @@ public static class DependencyInjection
         services.AddScoped<IBrandService, BrandService>();
         services.AddScoped<IProductAttributeService, ProductAttributeService>();
         services.AddScoped<IProductService, ProductService>();
+        services.AddScoped<IInventoryService, InventoryService>();
+        services.AddScoped<ISupplierService, SupplierService>();
+        services.AddScoped<IPurchaseOrderService, PurchaseOrderService>();
+        services.AddScoped<IHomePageBannerService, HomePageBannerService>();
+        services.AddScoped<IHomePageService, HomePageService>();
+        services.AddScoped<ICatalogBrowseService, CatalogBrowseService>();
 
         return services;
     }

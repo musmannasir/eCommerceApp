@@ -1,0 +1,61 @@
+@model ReceiveGoodsViewModel
+@{
+    ViewData["Title"] = $"Receive goods - {Model.OrderNumber}";
+}
+
+<h1 class="h3 mb-4">Receive goods - @Model.OrderNumber</h1>
+
+@if (TempData["Error"] is string error)
+{
+    <div class="alert alert-danger">@error</div>
+}
+
+@if (Model.Lines.Count == 0)
+{
+    <p class="text-muted">Every line on this purchase order has already been fully received.</p>
+    <a asp-action="Edit" asp-route-id="@Model.PurchaseOrderId" class="btn btn-outline-secondary">Back</a>
+}
+else
+{
+    <form asp-action="Receive" method="post">
+        <input type="hidden" asp-for="PurchaseOrderId" />
+        <input type="hidden" asp-for="OrderNumber" />
+
+        <table class="table align-middle">
+            <thead><tr><th>Product</th><th>Outstanding</th><th>Receive now</th><th>Allow over-receipt</th></tr></thead>
+            <tbody>
+                @for (var i = 0; i < Model.Lines.Count; i++)
+                {
+                    <tr>
+                        <td>
+                            @Model.Lines[i].ProductName
+                            <input type="hidden" asp-for="Lines[i].PurchaseOrderItemId" />
+                            <input type="hidden" asp-for="Lines[i].ProductName" />
+                            <input type="hidden" asp-for="Lines[i].Outstanding" />
+                        </td>
+                        <td>@Model.Lines[i].Outstanding</td>
+                        <td style="max-width:120px">
+                            <input asp-for="Lines[i].QuantityReceived" type="number" min="0" class="form-control" />
+                        </td>
+                        <td>
+                            <input asp-for="Lines[i].AllowOverride" class="form-check-input" />
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+
+        <div class="mb-3 col-md-6">
+            <label asp-for="OverrideReason" class="form-label"></label>
+            <input asp-for="OverrideReason" class="form-control" />
+            <span asp-validation-for="OverrideReason" class="text-danger small"></span>
+        </div>
+        <div class="mb-3 col-md-6">
+            <label asp-for="Notes" class="form-label"></label>
+            <textarea asp-for="Notes" class="form-control" rows="2"></textarea>
+        </div>
+
+        <button type="submit" class="btn btn-primary">Confirm receipt</button>
+        <a asp-action="Edit" asp-route-id="@Model.PurchaseOrderId" class="btn btn-outline-secondary">Cancel</a>
+    </form>
+}

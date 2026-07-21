@@ -1,0 +1,31 @@
+@model PagedResult<SupplierDto>
+@{
+    ViewData["Title"] = "Deleted suppliers";
+}
+
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h1 class="h3 mb-0">Recycle bin - Suppliers</h1>
+    <a asp-action="Index" class="btn btn-outline-secondary">Back to suppliers</a>
+</div>
+
+<table class="table table-hover align-middle">
+    <thead><tr><th>Name</th><th>Code</th><th></th></tr></thead>
+    <tbody>
+        @foreach (var supplier in Model.Items)
+        {
+            <tr>
+                <td>@supplier.Name</td>
+                <td class="text-muted small">@supplier.Code</td>
+                <td class="text-end">
+                    <form asp-action="Restore" asp-route-id="@supplier.Id" method="post" class="d-inline">
+                        <button type="submit" class="btn btn-sm btn-outline-success">Restore</button>
+                    </form>
+                </td>
+            </tr>
+        }
+        @if (Model.Items.Count == 0)
+        {
+            <tr><td colspan="3" class="text-center text-muted py-4">Nothing here.</td></tr>
+        }
+    </tbody>
+</table>

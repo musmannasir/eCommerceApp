@@ -1,0 +1,118 @@
+@model PagedResult<InventoryItemDto>
+@{
+    var warehouses = (IReadOnlyList<WarehouseDto>)(ViewData["Warehouses"] ?? Array.Empty<WarehouseDto>());
+    var warehouseId = ViewData["WarehouseId"] as int?;
+    var search = ViewData["Search"] as string;
+    var actionName = ViewData["ActionName"] as string ?? "Index";
+}
+
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h1 class="h3 mb-0">@ViewData["Title"]</h1>
+    <div class="d-flex gap-2">
+        <a asp-action="Index" class="btn btn-outline-secondary @(actionName == "Index" ? "active" : "")">Overview</a>
+        <a asp-action="LowStock" class="btn btn-outline-secondary @(actionName == "LowStock" ? "active" : "")">Low stock</a>
+        <a asp-action="OutOfStock" class="btn btn-outline-secondary @(actionName == "OutOfStock" ? "active" : "")">Out of stock</a>
+        <a asp-action="OpeningStock" class="btn btn-primary">Record opening stock</a>
+    </div>
+</div>
+
+@if (TempData["Message"] is string message)
+{
+    <div class="alert alert-success">@message</div>
+}
+@if (TempData["Error"] is string error)
+{
+    <div class="alert alert-danger">@error</div>
+}
+
+<form method="get" class="row g-2 mb-3">
+    @if (actionName == "Index")
+    {
+        <div class="col-auto">
+            <input type="search" name="search" value="@search" class="form-control" placeholder="Search product or SKU" />
+        </div>
+    }
+    <div class="col-auto">
+        <select name="warehouseId" class="form-select" onchange="this.form.submit()">
+            <option value="">All warehouses</option>
+            @foreach (var warehouse in warehouses)
+            {
+                if (warehouse.Id == warehouseId)
+                {
+                    <option value="@warehouse.Id" selected>@warehouse.Name</option>
+                }
+                else
+                {
+                    <option value="@warehouse.Id">@warehouse.Name</option>
+                }
+            }
+        </select>
+    </div>
+    <div class="col-auto">
+        <button type="submit" class="btn btn-outline-primary">Filter</button>
+    </div>
+</form>
+
+<table class="table table-hover align-middle">
+    <thead>
+        <tr>
+            <th>Product</th>
+            <th>SKU</th>
+            <th>Warehouse</th>
+            <th class="text-end">On hand</th>
+            <th class="text-end">Reserved</th>
+            <th class="text-end">Available</th>
+            <th class="text-end">Reorder level</th>
+            <th>Status</th>
+            <th></th>
+        </tr>
+    </thead>
+    <tbody>
+        @foreach (var item in Model.Items)
+        {
+            <tr>
+                <td>@item.ProductName</td>
+                <td class="text-muted small">@item.Sku</td>
+                <td>@item.WarehouseName</td>
+                <td class="text-end">@item.QuantityOnHand</td>
+                <td class="text-end">@item.QuantityReserved</td>
+                <td class="text-end">@item.QuantityAvailable</td>
+                <td class="text-end">@item.ReorderLevel</td>
+                <td>
+                    @{
+                        var badgeClass = item.StockStatus switch
+                        {
+                            "InStock" => "text-bg-success",
+                            "LowStock" => "text-bg-warning",
+                            "Backorder" => "text-bg-info",
+                            _ => "text-bg-danger",
+                        };
+                    }
+                    <span class="badge @badgeClass">@item.StockStatus</span>
+                </td>
+                <td class="text-end">
+                    <a asp-action="Adjust" asp-route-id="@item.Id" class="btn btn-sm btn-outline-secondary">Adjust</a>
+                    <a asp-action="MovementHistory" asp-route-id="@item.Id" class="btn btn-sm btn-outline-secondary">History</a>
+                </td>
+            </tr>
+        }
+        @if (Model.Items.Count == 0)
+        {
+            <tr><td colspan="9" class="text-center text-muted py-4">No inventory items found.</td></tr>
+        }
+    </tbody>
+</table>
+
+@if (Model.TotalPages > 1)
+{
+    <nav>
+        <ul class="pagination">
+            @for (var i = 1; i <= Model.TotalPages; i++)
+            {
+                <li class="page-item @(i == Model.Page ? "active" : "")">
+                    <a class="page-link" asp-action="@actionName" asp-route-page="@i" asp-route-warehouseId="@warehouseId" asp-route-search="@search">@i</a>
+                </li>
+            }
+        </ul>
+    </nav>
+}

@@ -1,0 +1,98 @@
+@model SupplierEditViewModel
+@{
+    ViewData["Title"] = "Edit supplier";
+}
+
+<h1 class="h3 mb-4">Edit supplier</h1>
+
+@if (TempData["Message"] is string message)
+{
+    <div class="alert alert-success">@message</div>
+}
+@if (TempData["Error"] is string error)
+{
+    <div class="alert alert-danger">@error</div>
+}
+
+<div class="row">
+    <div class="col-md-7">
+        <form asp-action="Edit" method="post">
+            @await Html.PartialAsync("_Form", Model.Form)
+        </form>
+    </div>
+    <div class="col-md-5">
+        <div class="card mb-3">
+            <div class="card-header">Linked products</div>
+            <ul class="list-group list-group-flush">
+                @foreach (var link in Model.LinkedProducts)
+                {
+                    <li class="list-group-item">
+                        <div class="d-flex justify-content-between align-items-start">
+                            <div>
+                                <div>@link.ProductName @(link.IsPreferred ? "★" : "")</div>
+                                <div class="text-muted small">
+                                    SKU: @link.ProductBaseSku
+                                    @if (!string.IsNullOrEmpty(link.SupplierSku)) { <text> &middot; Supplier SKU: @link.SupplierSku</text> }
+                                    @if (link.CostPrice.HasValue) { <text> &middot; Cost: @link.CostPrice.Value.ToString("0.00")</text> }
+                                    @if (link.LeadTimeDays.HasValue) { <text> &middot; Lead time: @link.LeadTimeDays days</text> }
+                                </div>
+                            </div>
+                            <form asp-action="UnlinkProduct" method="post"
+                                  asp-route-supplierProductId="@link.Id" asp-route-supplierId="@Model.Form.Id">
+                                <button type="submit" class="btn btn-sm btn-outline-danger">Remove</button>
+                            </form>
+                        </div>
+                    </li>
+                }
+                @if (Model.LinkedProducts.Count == 0)
+                {
+                    <li class="list-group-item text-muted small">No products linked yet.</li>
+                }
+            </ul>
+        </div>
+
+        @if (Model.AvailableProducts.Count > 0)
+        {
+            <div class="card">
+                <div class="card-header">Link a product</div>
+                <div class="card-body">
+                    <form asp-action="LinkProduct" method="post">
+                        <input type="hidden" name="SupplierId" value="@Model.Form.Id" />
+                        <div class="mb-2">
+                            <label class="form-label">Product</label>
+                            <select name="ProductId" class="form-select" required>
+                                @foreach (var product in Model.AvailableProducts)
+                                {
+                                    <option value="@product.Id">@product.Name (@product.BaseSKU)</option>
+                                }
+                            </select>
+                        </div>
+                        <div class="mb-2">
+                            <label class="form-label">Supplier SKU</label>
+                            <input name="SupplierSku" class="form-control" />
+                        </div>
+                        <div class="row">
+                            <div class="col-6 mb-2">
+                                <label class="form-label">Cost price</label>
+                                <input name="CostPrice" type="number" step="0.01" min="0" class="form-control" />
+                            </div>
+                            <div class="col-6 mb-2">
+                                <label class="form-label">Lead time (days)</label>
+                                <input name="LeadTimeDays" type="number" min="0" class="form-control" />
+                            </div>
+                        </div>
+                        <div class="mb-2 form-check">
+                            <input name="IsPreferred" type="checkbox" value="true" class="form-check-input" id="isPreferred" />
+                            <label class="form-check-label" for="isPreferred">Preferred supplier for this product</label>
+                        </div>
+                        <button type="submit" class="btn btn-outline-primary btn-sm">Link product</button>
+                    </form>
+                </div>
+            </div>
+        }
+        else
+        {
+            <p class="text-muted small">All products are already linked to this supplier.</p>
+        }
+    </div>
+</div>

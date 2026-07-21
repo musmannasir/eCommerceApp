@@ -1,7 +1,8 @@
 # Data Dictionary
 
-Tables added by the `InitialIdentityAndSecurity` migration (Milestone 1) and
-the `CatalogSchema` migration (Milestone 2).
+Tables added by the `InitialIdentityAndSecurity` migration (Milestone 1), the
+`CatalogSchema` migration (Milestone 2), and the `InventorySchema` migration
+(Milestone 3.1).
 ASP.NET Core Identity's own tables (`AspNetUsers`, `AspNetRoles`,
 `AspNetUserRoles`, `AspNetUserClaims`, `AspNetUserLogins`,
 `AspNetUserTokens`, `AspNetRoleClaims`) follow the framework's standard
@@ -199,10 +200,227 @@ Free-form spec rows (Id, ProductId, Name (nvarchar(200)), Value
 (nvarchar(1000)), DisplayOrder) shown on the product detail page. FK to
 Products is cascade.
 
+## Warehouses
+
+`IsDefault` marks the single warehouse the app treats as the default target
+when no warehouse is specified; the schema supports many warehouses even
+though only one is seeded/used today (Milestone 3 brief).
+
+| Column | Type | Nullable | Purpose |
+|---|---|---|---|
+| Id | int (identity) | No | Surrogate key |
+| Name | nvarchar(200) | No | |
+| Code | nvarchar(50) | No | Unique index |
+| AddressLine1 / AddressLine2 | nvarchar(200) | Yes | |
+| City / Region / Country | nvarchar(100) | Yes | |
+| PostalCode | nvarchar(20) | Yes | |
+| IsDefault | bit | No | |
+| IsActive | bit | No | |
+
+## InventoryItems
+
+Tracks stock for one purchasable unit in one warehouse. A purchasable unit is
+either a specific `ProductVariant` (when the product has variants) or the
+`Product` itself (`ProductVariantId` null) - Milestone 2 never requires a
+product to have variants. Two filtered unique indexes make it impossible to
+double-track the same unit in the same warehouse:
+`(WarehouseId, ProductId) WHERE ProductVariantId IS NULL` and
+`(WarehouseId, ProductVariantId) WHERE ProductVariantId IS NOT NULL`.
+`QuantityAvailable` (= QuantityOnHand - QuantityReserved) is a computed,
+non-persisted property - never stored, so it can't drift from its inputs.
+
+| Column | Type | Nullable | Purpose |
+|---|---|---|---|
+| Id | int (identity) | No | Surrogate key |
+| WarehouseId | int | No | FK to Warehouses, `RESTRICT` |
+| ProductId | int | No | FK to Products, `RESTRICT` |
+| ProductVariantId | int | Yes | FK to ProductVariants, `RESTRICT` |
+| QuantityOnHand | int | No | |
+| QuantityReserved | int | No | |
+| ReorderLevel | int | No | At/below this (and > 0), status becomes LowStock |
+| ReorderQuantity | int | No | Suggested restock quantity - not yet consumed until Milestone 3.3 (purchase orders) |
+| AllowBackorder | bit | No | When true, reservations may exceed on-hand |
+| StockStatus | int (enum) | No | `InStock`/`LowStock`/`OutOfStock`/`Backorder` - denormalized and indexed for fast admin filtering, recomputed on every quantity change |
+| LastStockUpdateUtc | datetime2 | No | |
+
+## StockMovements
+
+An immutable ledger entry for every stock change - insert-only, never updated
+or deleted, so it deliberately does **not** derive from `AuditableEntity`
+(no `IsDeleted`, `UpdatedAtUtc`, or `RowVersion` columns exist on this table).
+Corrections are new, opposite-sign rows, never edits to history.
+
+| Column | Type | Nullable | Purpose |
+|---|---|---|---|
+| Id | int (identity) | No | Surrogate key |
+| InventoryItemId | int | No | FK to InventoryItems, `RESTRICT`, indexed |
+| MovementType | int (enum) | No | OpeningStock / PurchaseReceipt / SaleReservation / SaleCompletion / ReservationRelease / CustomerReturn / SupplierReturn / Damage / Loss / ManualAdjustment / Transfer |
+| QuantityChange | int | No | Signed; meaning depends on MovementType (on-hand delta for stock-count changes, reserved delta for reservation/release) |
+| QuantityOnHandAfter | int | No | Snapshot for audit readability without replaying history |
+| QuantityReservedAfter | int | No | Snapshot |
+| ReferenceType | nvarchar(100) | Yes | Free-form pointer to the causing record (e.g. `"StockAdjustment"`, `"InventoryReservation"`) - not an FK, since several of those record types don't exist as entities until later milestones |
+| ReferenceId | int | Yes | |
+| Reason | nvarchar(500) | Yes | |
+| OccurredAtUtc | datetime2 | No | Indexed |
+| CreatedByUserId | nvarchar(450) | Yes | |
+
+## StockAdjustments
+
+A detailed, immutable record of a manual stock adjustment (who/why), in
+addition to the generic StockMovements ledger row it produces. Also does not
+derive from `AuditableEntity`, for the same immutability reason as
+StockMovements. "With approval where configured" (Milestone 3 brief) has no
+configuration source yet - Store Configuration lands in Milestone 16 - so
+adjustments apply immediately for any `CanManageInventory`-authorized user.
+
+| Column | Type | Nullable | Purpose |
+|---|---|---|---|
+| Id | int (identity) | No | Surrogate key |
+| InventoryItemId | int | No | FK to InventoryItems, `RESTRICT`, indexed |
+| QuantityDelta | int | No | Signed; on-hand adjustment (rejected if it would take on-hand below zero) |
+| Reason | nvarchar(500) | No | Required |
+| QuantityOnHandAfter | int | No | |
+| AdjustedAtUtc | datetime2 | No | |
+| AdjustedByUserId | nvarchar(450) | Yes | |
+
+## InventoryReservations
+
+Reserves stock against an `InventoryItem` for a cart or order - those callers
+arrive in Milestones 6 and 9, so `ReferenceType`/`ReferenceId` are free-form
+for now. Unlike the ledger tables above, this has a real lifecycle
+(Active -> Released/Consumed/Expired), so it does use `AuditableEntity`.
+
+| Column | Type | Nullable | Purpose |
+|---|---|---|---|
+| Id | int (identity) | No | Surrogate key |
+| InventoryItemId | int | No | FK to InventoryItems, `RESTRICT`, indexed |
+| Quantity | int | No | |
+| Status | int (enum) | No | Active / Released / Consumed / Expired, indexed |
+| ReferenceType | nvarchar(100) | Yes | |
+| ReferenceId | nvarchar(100) | Yes | |
+| ExpiresAtUtc | datetime2 | Yes | |
+| ReleasedAtUtc | datetime2 | Yes | |
+
+## Suppliers
+
+| Column | Type | Nullable | Purpose |
+|---|---|---|---|
+| Id | int (identity) | No | Surrogate key |
+| Name | nvarchar(200) | No | |
+| Code | nvarchar(50) | No | Unique index; used on purchase-order documents (Milestone 3.3) |
+| ContactName | nvarchar(200) | Yes | |
+| Email | nvarchar(256) | Yes | |
+| Phone | nvarchar(50) | Yes | |
+| AddressLine1 / AddressLine2 | nvarchar(200) | Yes | |
+| City / Region / Country | nvarchar(100) | Yes | |
+| PostalCode | nvarchar(20) | Yes | |
+| Website | nvarchar(500) | Yes | |
+| Notes | nvarchar(2000) | Yes | |
+| IsActive | bit | No | |
+
+## SupplierProducts
+
+Plain join record linking a `Supplier` to a `Product` it can source -
+mirrors `ProductTagMappings`: derives from `BaseEntity`, not
+`AuditableEntity`, so unlinking removes the row outright rather than
+soft-deleting it (a link is either present or not; there is no meaningful
+"deleted link" state to recover from a recycle bin).
+
+| Column | Type | Nullable | Purpose |
+|---|---|---|---|
+| Id | int (identity) | No | Surrogate key |
+| SupplierId | int | No | FK to Suppliers, cascade; unique composite index with ProductId |
+| ProductId | int | No | FK to Products, cascade |
+| SupplierSku | nvarchar(100) | Yes | The supplier's own part number/SKU for this product |
+| CostPrice | decimal(18,2) | Yes | Negotiated cost from this supplier; falls back to the product's own CostPrice in the UI when unset |
+| LeadTimeDays | int | Yes | |
+| IsPreferred | bit | No | Marks this as the preferred supplier for the product (informational only - no enforcement that only one link per product is preferred) |
+
+## PurchaseOrders
+
+| Column | Type | Nullable | Purpose |
+|---|---|---|---|
+| Id | int (identity) | No | Surrogate key |
+| SupplierId | int | No | FK to Suppliers, `RESTRICT` |
+| WarehouseId | int | No | FK to Warehouses, `RESTRICT` - the receiving warehouse |
+| OrderNumber | nvarchar(20) | No | Unique index; generated as `PO-{Id:D6}` after insert (internal document number, not customer-facing - unlike the non-sequential order numbers Milestone 9 requires for customer orders, sequential is fine here) |
+| Status | int (enum) | No | Draft / Submitted / Approved / PartiallyReceived / Received / Cancelled, indexed |
+| ExpectedDeliveryDate | datetime2 | Yes | |
+| Notes | nvarchar(2000) | Yes | |
+| SubmittedAtUtc / ApprovedAtUtc / CompletedAtUtc / CancelledAtUtc | datetime2 | Yes | Lifecycle timestamps |
+| ApprovedByUserId / CancelledByUserId | nvarchar(450) | Yes | |
+
+## PurchaseOrderItems
+
+Product-level, not variant-level - matches `SupplierProducts`' granularity
+(see the "Supplier-product linking scope" note in `Database-Design.md`).
+`ProductName`/`ProductSku` are snapshotted at add-time so a PO's history
+stays accurate even if the product is later renamed or re-SKU'd.
+
+| Column | Type | Nullable | Purpose |
+|---|---|---|---|
+| Id | int (identity) | No | Surrogate key |
+| PurchaseOrderId | int | No | FK to PurchaseOrders, cascade |
+| ProductId | int | No | FK to Products, `RESTRICT` |
+| ProductName | nvarchar(200) | No | Snapshot |
+| ProductSku | nvarchar(100) | No | Snapshot |
+| QuantityOrdered | int | No | |
+| QuantityReceived | int | No | Running total across all goods receipts for this line |
+| UnitCost | decimal(18,2) | No | Snapshot of cost at order time |
+
+## GoodsReceipts
+
+An immutable receiving event against a `PurchaseOrder` - insert-only, like
+`StockMovements`/`StockAdjustments`, so it deliberately does not derive from
+`AuditableEntity` (no `IsDeleted`, `UpdatedAtUtc`, or `RowVersion` columns).
+
+| Column | Type | Nullable | Purpose |
+|---|---|---|---|
+| Id | int (identity) | No | Surrogate key |
+| PurchaseOrderId | int | No | FK to PurchaseOrders, `RESTRICT`, indexed |
+| ReceivedAtUtc | datetime2 | No | Indexed |
+| ReceivedByUserId | nvarchar(450) | Yes | |
+| Notes | nvarchar(2000) | Yes | |
+| OverrideReason | nvarchar(500) | Yes | Set only when at least one line in this receipt exceeded its outstanding quantity |
+
+## GoodsReceiptItems
+
+Immutable line of a `GoodsReceipt` - same non-`AuditableEntity` reasoning.
+
+| Column | Type | Nullable | Purpose |
+|---|---|---|---|
+| Id | int (identity) | No | Surrogate key |
+| GoodsReceiptId | int | No | FK to GoodsReceipts, cascade, indexed |
+| PurchaseOrderItemId | int | No | FK to PurchaseOrderItems, `RESTRICT`, indexed |
+| QuantityReceived | int | No | |
+| IsOverride | bit | No | True if this specific line received more than was outstanding |
+
+## HomePageBanners
+
+Admin-managed home page content (Milestone 4.1 brief requires hero banners
+and promo blocks to be admin-managed, not hardcoded). `ImagePath` is
+nullable - a banner can be created before its image is uploaded (same
+two-step create-then-upload flow as `Brand.LogoPath`) - and the storefront
+home page excludes any banner without one.
+
+| Column | Type | Nullable | Purpose |
+|---|---|---|---|
+| Id | int (identity) | No | Surrogate key |
+| Title | nvarchar(200) | No | |
+| Subtitle | nvarchar(500) | Yes | |
+| ImagePath | nvarchar(500) | Yes | Null until an image is uploaded; storefront excludes imageless banners |
+| LinkUrl | nvarchar(500) | Yes | Admin-supplied, rendered as a real link (unlike system-generated category/product links, which stay non-clickable until their destination pages exist) |
+| BannerType | int (enum) | No | Hero / Promo, indexed with DisplayOrder |
+| DisplayOrder | int | No | |
+| IsActive | bit | No | |
+
 ## Soft delete and RowVersion
 
-Every table above (except the pure join tables `ProductTagMappings` and
-`ProductVariantAttributeValues`) inherits `AuditableEntity`: `IsDeleted` (soft
+Every table above (except the pure join tables `ProductTagMappings`,
+`ProductVariantAttributeValues`, and `SupplierProducts`, and the immutable
+ledger tables `StockMovements`, `StockAdjustments`, `GoodsReceipts`, and
+`GoodsReceiptItems`) inherits `AuditableEntity`:
+`IsDeleted` (soft
 delete, globally filtered out of normal queries) and `RowVersion` - a real SQL
 Server `rowversion`/`timestamp` column and EF Core concurrency token (see
 `ApplicationDbContext.OnModelCreating`'s `IsRowVersion()` configuration).

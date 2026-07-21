@@ -1,0 +1,171 @@
+@model PurchaseOrderEditViewModel
+@{
+    ViewData["Title"] = $"Purchase order {Model.Order.OrderNumber}";
+    var order = Model.Order;
+}
+
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h1 class="h3 mb-0">@order.OrderNumber <span class="badge text-bg-secondary">@order.Status</span></h1>
+    <a asp-action="Index" class="btn btn-outline-secondary">Back to list</a>
+</div>
+
+@if (TempData["Message"] is string message)
+{
+    <div class="alert alert-success">@message</div>
+}
+@if (TempData["Error"] is string error)
+{
+    <div class="alert alert-danger">@error</div>
+}
+
+<div class="row mb-4">
+    <div class="col-md-8">
+        <dl class="row">
+            <dt class="col-sm-3">Supplier</dt><dd class="col-sm-9">@order.SupplierName</dd>
+            <dt class="col-sm-3">Warehouse</dt><dd class="col-sm-9">@order.WarehouseName</dd>
+            <dt class="col-sm-3">Expected delivery</dt><dd class="col-sm-9">@(order.ExpectedDeliveryDate?.ToString("yyyy-MM-dd") ?? "-")</dd>
+            @if (!string.IsNullOrEmpty(order.Notes))
+            {
+                <dt class="col-sm-3">Notes</dt><dd class="col-sm-9">@order.Notes</dd>
+            }
+        </dl>
+    </div>
+    <div class="col-md-4 text-end">
+        @if (order.Status == "Draft")
+        {
+            <form asp-action="Submit" asp-route-id="@order.Id" method="post" class="d-inline">
+                <button type="submit" class="btn btn-primary" @(order.Items.Count == 0 ? "disabled" : "")>Submit</button>
+            </form>
+        }
+        @if (order.Status == "Submitted")
+        {
+            <form asp-action="Approve" asp-route-id="@order.Id" method="post" class="d-inline">
+                <button type="submit" class="btn btn-primary">Approve</button>
+            </form>
+        }
+        @if (order.Status is "Approved" or "PartiallyReceived")
+        {
+            <a asp-action="Receive" asp-route-id="@order.Id" class="btn btn-primary">Receive goods</a>
+        }
+        @if (order.Status is "Draft" or "Submitted" or "Approved")
+        {
+            <form asp-action="Cancel" asp-route-id="@order.Id" method="post" class="d-inline"
+                  onsubmit="return confirm('Cancel this purchase order?');">
+                <button type="submit" class="btn btn-outline-danger">Cancel</button>
+            </form>
+        }
+    </div>
+</div>
+
+<h2 class="h5">Items</h2>
+<table class="table table-sm align-middle">
+    <thead>
+        <tr><th>Product</th><th>SKU</th><th>Ordered</th><th>Received</th><th>Unit cost</th><th>Line total</th><th></th></tr>
+    </thead>
+    <tbody>
+        @foreach (var item in order.Items)
+        {
+            <tr>
+                <td>@item.ProductName</td>
+                <td class="text-muted small">@item.ProductSku</td>
+                <td>@item.QuantityOrdered</td>
+                <td>@item.QuantityReceived</td>
+                <td>@item.UnitCost.ToString("0.00")</td>
+                <td>@((item.UnitCost * item.QuantityOrdered).ToString("0.00"))</td>
+                <td class="text-end">
+                    @if (order.Status == "Draft")
+                    {
+                        <form asp-action="RemoveItem" method="post" asp-route-purchaseOrderItemId="@item.Id" asp-route-purchaseOrderId="@order.Id" class="d-inline">
+                            <button type="submit" class="btn btn-sm btn-outline-danger">Remove</button>
+                        </form>
+                    }
+                </td>
+            </tr>
+        }
+        @if (order.Items.Count == 0)
+        {
+            <tr><td colspan="7" class="text-center text-muted py-3">No items yet.</td></tr>
+        }
+    </tbody>
+</table>
+
+@if (order.Status == "Draft")
+{
+    <div class="card mb-4" style="max-width: 700px;">
+        <div class="card-header">Add item</div>
+        <div class="card-body">
+            @if (Model.LinkableProducts.Count > 0)
+            {
+                <form asp-action="AddItem" method="post" class="row g-2 align-items-end">
+                    <input type="hidden" name="PurchaseOrderId" value="@order.Id" />
+                    <div class="col-md-5">
+                        <label class="form-label">Product</label>
+                        <select name="ProductId" id="poProductSelect" class="form-select">
+                            @foreach (var product in Model.LinkableProducts)
+                            {
+                                <option value="@product.ProductId" data-cost="@(product.CostPrice?.ToString("0.00") ?? "")">
+                                    @product.ProductName (@product.ProductBaseSku)@(product.IsPreferred ? " ★" : "")
+                                </option>
+                            }
+                        </select>
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label">Quantity</label>
+                        <input name="QuantityOrdered" type="number" min="1" class="form-control" required />
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label">Unit cost</label>
+                        <input name="UnitCost" id="poUnitCost" type="number" step="0.01" min="0" class="form-control" required />
+                    </div>
+                    <div class="col-md-1">
+                        <button type="submit" class="btn btn-outline-primary">Add</button>
+                    </div>
+                </form>
+                <script>
+                    (function () {
+                        var select = document.getElementById('poProductSelect');
+                        var cost = document.getElementById('poUnitCost');
+                        function applyDefaultCost() {
+                            var option = select.options[select.selectedIndex];
+                            var value = option ? option.getAttribute('data-cost') : '';
+                            if (value) { cost.value = value; }
+                        }
+                        select.addEventListener('change', applyDefaultCost);
+                        applyDefaultCost();
+                    })();
+                </script>
+            }
+            else
+            {
+                <p class="text-muted small mb-0">
+                    This supplier has no linked products yet. Link products on the
+                    <a asp-controller="Suppliers" asp-action="Edit" asp-route-id="@order.SupplierId">supplier's page</a> first.
+                </p>
+            }
+        </div>
+    </div>
+}
+
+@if (Model.Receipts.Count > 0)
+{
+    <h2 class="h5">Goods receipt history</h2>
+    <table class="table table-sm">
+        <thead><tr><th>Received</th><th>By</th><th>Lines</th><th>Notes</th></tr></thead>
+        <tbody>
+            @foreach (var receipt in Model.Receipts)
+            {
+                <tr>
+                    <td>@receipt.ReceivedAtUtc.ToString("yyyy-MM-dd HH:mm") UTC</td>
+                    <td class="text-muted small">@receipt.ReceivedByUserId</td>
+                    <td>
+                        @foreach (var line in receipt.Items)
+                        {
+                            <div>@line.ProductName: @line.QuantityReceived @(line.IsOverride ? "(override)" : "")</div>
+                        }
+                    </td>
+                    <td class="text-muted small">@receipt.Notes @(!string.IsNullOrEmpty(receipt.OverrideReason) ? $"— override: {receipt.OverrideReason}" : "")</td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}

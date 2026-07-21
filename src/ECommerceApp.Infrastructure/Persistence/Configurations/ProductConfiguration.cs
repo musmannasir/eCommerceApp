@@ -30,6 +30,12 @@ public class ProductConfiguration : IEntityTypeConfiguration<Product>
         builder.HasIndex(p => p.Slug).IsUnique();
         builder.HasIndex(p => p.BaseSKU).IsUnique();
 
+        // Milestone 4.3: every storefront listing query filters IsActive+IsPublished first,
+        // then commonly sorts/filters by price or recency - index the shapes those queries hit.
+        builder.HasIndex(p => new { p.IsActive, p.IsPublished });
+        builder.HasIndex(p => p.SellingPrice);
+        builder.HasIndex(p => p.PublishedAtUtc);
+
         builder.HasOne(p => p.Category)
             .WithMany()
             .HasForeignKey(p => p.CategoryId)

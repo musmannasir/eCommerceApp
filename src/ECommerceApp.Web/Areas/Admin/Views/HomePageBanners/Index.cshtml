@@ -1,0 +1,104 @@
+@model PagedResult<HomePageBannerDto>
+@{
+    ViewData["Title"] = "Home page banners";
+    var search = ViewData["Search"] as string;
+}
+
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h1 class="h3 mb-0">Home page banners</h1>
+    <div class="d-flex gap-2">
+        <a asp-action="Deleted" class="btn btn-outline-secondary">Recycle bin</a>
+        <a asp-action="Create" class="btn btn-primary">New banner</a>
+    </div>
+</div>
+
+@if (TempData["Message"] is string message)
+{
+    <div class="alert alert-success">@message</div>
+}
+@if (TempData["Error"] is string error)
+{
+    <div class="alert alert-danger">@error</div>
+}
+
+<form method="get" class="row g-2 mb-3">
+    <div class="col-auto">
+        <input type="search" name="search" value="@search" class="form-control" placeholder="Search title" />
+    </div>
+    <div class="col-auto">
+        <button type="submit" class="btn btn-outline-primary">Search</button>
+    </div>
+</form>
+
+<table class="table table-hover align-middle">
+    <thead>
+        <tr><th>Image</th><th>Title</th><th>Type</th><th>Order</th><th>Status</th><th></th></tr>
+    </thead>
+    <tbody>
+        @foreach (var banner in Model.Items)
+        {
+            <tr>
+                <td>
+                    @if (!string.IsNullOrEmpty(banner.ImagePath))
+                    {
+                        <img src="@banner.ImagePath" alt="@banner.Title" style="height:40px" />
+                    }
+                    else
+                    {
+                        <span class="text-muted small">No image</span>
+                    }
+                </td>
+                <td>@banner.Title</td>
+                <td>@banner.BannerType</td>
+                <td>@banner.DisplayOrder</td>
+                <td>
+                    @if (banner.IsActive)
+                    {
+                        <span class="badge text-bg-success">Active</span>
+                    }
+                    else
+                    {
+                        <span class="badge text-bg-secondary">Inactive</span>
+                    }
+                </td>
+                <td class="text-end">
+                    <a asp-action="Edit" asp-route-id="@banner.Id" class="btn btn-sm btn-outline-secondary">Edit</a>
+                    @if (banner.IsActive)
+                    {
+                        <form asp-action="Deactivate" asp-route-id="@banner.Id" method="post" class="d-inline">
+                            <button type="submit" class="btn btn-sm btn-outline-warning">Deactivate</button>
+                        </form>
+                    }
+                    else
+                    {
+                        <form asp-action="Activate" asp-route-id="@banner.Id" method="post" class="d-inline">
+                            <button type="submit" class="btn btn-sm btn-outline-success">Activate</button>
+                        </form>
+                    }
+                    <form asp-action="Delete" asp-route-id="@banner.Id" method="post" class="d-inline"
+                          onsubmit="return confirm('Delete this banner?');">
+                        <button type="submit" class="btn btn-sm btn-outline-danger">Delete</button>
+                    </form>
+                </td>
+            </tr>
+        }
+        @if (Model.Items.Count == 0)
+        {
+            <tr><td colspan="6" class="text-center text-muted py-4">No banners found.</td></tr>
+        }
+    </tbody>
+</table>
+
+@if (Model.TotalPages > 1)
+{
+    <nav>
+        <ul class="pagination">
+            @for (var i = 1; i <= Model.TotalPages; i++)
+            {
+                <li class="page-item @(i == Model.Page ? "active" : "")">
+                    <a class="page-link" asp-action="Index" asp-route-page="@i" asp-route-search="@search">@i</a>
+                </li>
+            }
+        </ul>
+    </nav>
+}

@@ -11,6 +11,9 @@ public interface IProductService
     Task<Result<ProductDto>> GetByIdAsync(int id, CancellationToken cancellationToken = default);
     Task<Result<PagedResult<ProductListItemDto>>> GetPagedAsync(ProductListQuery query, CancellationToken cancellationToken = default);
 
+    /// <summary>Lightweight active-product-plus-variant list for picker UIs (e.g. recording opening stock) - avoids loading each product's full detail graph.</summary>
+    Task<Result<IReadOnlyList<ProductPickerItemDto>>> GetPickerListAsync(CancellationToken cancellationToken = default);
+
     Task<Result> PublishAsync(int id, CancellationToken cancellationToken = default);
     Task<Result> UnpublishAsync(int id, CancellationToken cancellationToken = default);
     Task<Result> DeactivateAsync(int id, CancellationToken cancellationToken = default);

@@ -1,0 +1,226 @@
+@model CatalogListingViewModel
+@{
+    ViewData["Title"] = Model.PageTitle;
+    var sortOptions = new (string Value, string Label)[]
+    {
+        ("Relevance", "Relevance"),
+        ("Newest", "Newest"),
+        ("PriceAsc", "Price: Low to High"),
+        ("PriceDesc", "Price: High to Low"),
+        ("LargestDiscount", "Biggest Discount"),
+        ("NameAsc", "Name: A-Z"),
+        ("NameDesc", "Name: Z-A"),
+    };
+    // Highest Rated and Best Selling aren't offered - there's no rating data (Milestone 12)
+    // or order history (Milestone 9) yet to sort by.
+}
+
+<div class="row">
+    <div class="col-md-3 mb-4">
+        <form method="get" action="@Model.BaseUrl">
+            @if (!string.IsNullOrEmpty(Model.SearchTerm))
+            {
+                <input type="hidden" name="q" value="@Model.SearchTerm" />
+            }
+            <input type="hidden" name="sort" value="@Model.Sort" />
+            <input type="hidden" name="view" value="@Model.ViewMode" />
+
+            <h2 class="h6">Price</h2>
+            <div class="d-flex gap-2 mb-3">
+                <input type="number" name="minPrice" value="@Model.MinPrice" class="form-control form-control-sm" placeholder="Min" min="0" step="0.01" />
+                <input type="number" name="maxPrice" value="@Model.MaxPrice" class="form-control form-control-sm" placeholder="Max" min="0" step="0.01" />
+            </div>
+
+            @if (Model.FilterOptions.Subcategories.Count > 0)
+            {
+                <h2 class="h6">Subcategory</h2>
+                <select name="categoryId" class="form-select form-select-sm mb-3">
+                    <option value="">All</option>
+                    @foreach (var sub in Model.FilterOptions.Subcategories)
+                    {
+                        <option value="@sub.Id" selected="@(Model.SelectedCategoryId == sub.Id)">@sub.Name</option>
+                    }
+                </select>
+            }
+            else if (Model.FilterOptions.Categories.Count > 0)
+            {
+                <h2 class="h6">Category</h2>
+                <select name="categoryId" class="form-select form-select-sm mb-3">
+                    <option value="">All</option>
+                    @foreach (var cat in Model.FilterOptions.Categories)
+                    {
+                        <option value="@cat.Id" selected="@(Model.SelectedCategoryId == cat.Id)">@cat.Name</option>
+                    }
+                </select>
+            }
+
+            @if (Model.FilterOptions.Brands.Count > 0)
+            {
+                <h2 class="h6">Brand</h2>
+                <select name="brandId" class="form-select form-select-sm mb-3">
+                    <option value="">All</option>
+                    @foreach (var brand in Model.FilterOptions.Brands)
+                    {
+                        <option value="@brand.Id" selected="@(Model.SelectedBrandId == brand.Id)">@brand.Name</option>
+                    }
+                </select>
+            }
+
+            @foreach (var productAttribute in Model.FilterOptions.Attributes)
+            {
+                <h2 class="h6">@productAttribute.Name</h2>
+                <div class="mb-3">
+                    @foreach (var value in productAttribute.Values)
+                    {
+                        <div class="form-check">
+                            <input type="checkbox" name="attr" value="@value.Id" class="form-check-input" id="attr-@value.Id"
+                                   checked="@Model.SelectedAttributeValueIds.Contains(value.Id)" />
+                            <label class="form-check-label small" for="attr-@value.Id">@value.Value</label>
+                        </div>
+                    }
+                </div>
+            }
+
+            <div class="form-check">
+                <input type="checkbox" name="inStock" value="true" class="form-check-input" id="inStock" checked="@Model.OnlyInStock" />
+                <label class="form-check-label small" for="inStock">In stock only</label>
+            </div>
+            <div class="form-check">
+                <input type="checkbox" name="discounted" value="true" class="form-check-input" id="discounted" checked="@Model.OnlyDiscounted" />
+                <label class="form-check-label small" for="discounted">Discounted</label>
+            </div>
+            <div class="form-check">
+                <input type="checkbox" name="featured" value="true" class="form-check-input" id="featured" checked="@Model.OnlyFeatured" />
+                <label class="form-check-label small" for="featured">Featured</label>
+            </div>
+            <div class="form-check mb-3">
+                <input type="checkbox" name="newArrivals" value="true" class="form-check-input" id="newArrivals" checked="@Model.OnlyNewArrivals" />
+                <label class="form-check-label small" for="newArrivals">New arrivals</label>
+            </div>
+
+            <button type="submit" class="btn btn-sm btn-primary">Apply filters</button>
+            @if (Model.HasAdditionalFilters)
+            {
+                <a href="@Model.ClearAdditionalFiltersUrl" class="btn btn-sm btn-outline-secondary">Clear filters</a>
+            }
+        </form>
+    </div>
+
+    <div class="col-md-9">
+        <div class="d-flex justify-content-between align-items-start flex-wrap gap-2 mb-3">
+            <div>
+                <h1 class="h3 mb-1">@Model.PageTitle</h1>
+                @if (!string.IsNullOrEmpty(Model.ActiveFilterLabel))
+                {
+                    <div>
+                        <span class="badge text-bg-secondary">
+                            @Model.ActiveFilterLabel
+                            <a href="@Model.ClearFiltersUrl" class="text-white text-decoration-none ms-1" aria-label="Clear filter">&times;</a>
+                        </span>
+                    </div>
+                }
+            </div>
+            <div class="d-flex align-items-center gap-2">
+                <select id="sortSelect" class="form-select form-select-sm" style="width:auto" aria-label="Sort by">
+                    @foreach (var option in sortOptions)
+                    {
+                        <option value="@option.Value" data-url="@Model.BuildUrl(page: 1, sort: option.Value)" selected="@(Model.Sort == option.Value)">@option.Label</option>
+                    }
+                </select>
+                <div class="btn-group" role="group" aria-label="View mode">
+                    <a class="btn btn-sm @(Model.ViewMode == "grid" ? "btn-secondary" : "btn-outline-secondary")" href="@Model.BuildUrl(view: "grid")">Grid</a>
+                    <a class="btn btn-sm @(Model.ViewMode == "list" ? "btn-secondary" : "btn-outline-secondary")" href="@Model.BuildUrl(view: "list")">List</a>
+                </div>
+            </div>
+        </div>
+
+        @if (Model.Products.Items.Count == 0)
+        {
+            <div class="text-center py-5">
+                <p class="text-muted mb-2">No products found.</p>
+                @if (Model.HasAdditionalFilters)
+                {
+                    <a href="@Model.ClearAdditionalFiltersUrl" class="btn btn-outline-secondary btn-sm">Clear filters</a>
+                }
+                else if (!string.IsNullOrEmpty(Model.ClearFiltersUrl))
+                {
+                    <a href="@Model.ClearFiltersUrl" class="btn btn-outline-secondary btn-sm">Clear filter</a>
+                }
+            </div>
+        }
+        else if (Model.ViewMode == "list")
+        {
+            <div class="list-group">
+                @foreach (var product in Model.Products.Items)
+                {
+                    <div class="list-group-item d-flex gap-3 align-items-center">
+                        @if (!string.IsNullOrEmpty(product.ImagePath))
+                        {
+                            <img src="@product.ImagePath" alt="@product.Name" loading="lazy" style="width:64px;height:64px;object-fit:cover" />
+                        }
+                        else
+                        {
+                            <div class="bg-light d-flex align-items-center justify-content-center text-muted small" style="width:64px;height:64px">No image</div>
+                        }
+                        <div class="flex-grow-1">
+                            @if (!string.IsNullOrEmpty(product.BrandName))
+                            {
+                                @if (!string.IsNullOrEmpty(product.BrandSlug))
+                                {
+                                    <div class="text-muted small"><a href="/Brand/@product.BrandSlug" class="text-muted">@product.BrandName</a></div>
+                                }
+                                else
+                                {
+                                    <div class="text-muted small">@product.BrandName</div>
+                                }
+                            }
+                            <div class="fw-semibold">@product.Name</div>
+                            @if (product.IsOutOfStock)
+                            {
+                                <span class="badge text-bg-secondary">Out of stock</span>
+                            }
+                        </div>
+                        <div class="text-end">
+                            <div class="fw-bold">@product.SellingPrice.ToString("0.00")</div>
+                            @if (product.CompareAtPrice.HasValue)
+                            {
+                                <div class="text-muted text-decoration-line-through small">@product.CompareAtPrice.Value.ToString("0.00")</div>
+                            }
+                        </div>
+                    </div>
+                }
+            </div>
+        }
+        else
+        {
+            <div class="row row-cols-2 row-cols-md-3 row-cols-lg-4 g-3">
+                @foreach (var product in Model.Products.Items)
+                {
+                    <div class="col">@await Html.PartialAsync("~/Views/Home/_ProductCard.cshtml", product)</div>
+                }
+            </div>
+        }
+
+        @if (Model.Products.TotalPages > 1)
+        {
+            <nav class="mt-4">
+                <ul class="pagination">
+                    @for (var i = 1; i <= Model.Products.TotalPages; i++)
+                    {
+                        <li class="page-item @(i == Model.Products.Page ? "active" : "")">
+                            <a class="page-link" href="@Model.BuildUrl(page: i)">@i</a>
+                        </li>
+                    }
+                </ul>
+            </nav>
+        }
+    </div>
+</div>
+
+@section Scripts {
+    <script>
+        document.getElementById('sortSelect').addEventListener('change', function () {
+            window.location.href = this.selectedOptions[0].dataset.url;
+        });
+    </script>
+}

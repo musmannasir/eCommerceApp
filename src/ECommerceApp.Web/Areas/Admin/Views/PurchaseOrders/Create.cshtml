@@ -1,0 +1,44 @@
+@model PurchaseOrderFormViewModel
+@{
+    ViewData["Title"] = "New purchase order";
+    var suppliers = (IReadOnlyList<SupplierDto>)ViewBag.Suppliers;
+    var warehouses = (IReadOnlyList<WarehouseDto>)ViewBag.Warehouses;
+}
+
+<h1 class="h3 mb-4">New purchase order</h1>
+
+<div asp-validation-summary="ModelOnly" class="text-danger"></div>
+
+<form asp-action="Create" method="post" class="col-md-6">
+    <div class="mb-3">
+        <label asp-for="SupplierId" class="form-label"></label>
+        <select asp-for="SupplierId" class="form-select">
+            <option value="">Select a supplier</option>
+            @foreach (var supplier in suppliers)
+            {
+                <option value="@supplier.Id">@supplier.Name (@supplier.Code)</option>
+            }
+        </select>
+    </div>
+    <div class="mb-3">
+        <label asp-for="WarehouseId" class="form-label"></label>
+        <select asp-for="WarehouseId" class="form-select">
+            <option value="">Select a warehouse</option>
+            @foreach (var warehouse in warehouses)
+            {
+                <option value="@warehouse.Id">@warehouse.Name @(warehouse.IsDefault ? "(default)" : "")</option>
+            }
+        </select>
+    </div>
+    <div class="mb-3">
+        <label asp-for="ExpectedDeliveryDate" class="form-label"></label>
+        <input asp-for="ExpectedDeliveryDate" class="form-control" />
+    </div>
+    <div class="mb-3">
+        <label asp-for="Notes" class="form-label"></label>
+        <textarea asp-for="Notes" class="form-control" rows="3"></textarea>
+    </div>
+
+    <button type="submit" class="btn btn-primary">Create draft</button>
+    <a asp-action="Index" class="btn btn-outline-secondary">Cancel</a>
+</form>

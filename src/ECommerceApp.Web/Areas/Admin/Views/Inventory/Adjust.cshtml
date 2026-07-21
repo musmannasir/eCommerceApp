@@ -1,0 +1,38 @@
+@model AdjustStockFormViewModel
+@{
+    ViewData["Title"] = "Adjust Stock";
+}
+
+<h1 class="h3 mb-1">Adjust Stock</h1>
+<p class="text-muted">@Model.ProductName (@Model.Sku) &mdash; @Model.WarehouseName</p>
+<p>Current on hand: <strong>@Model.CurrentQuantityOnHand</strong> &middot; Available: <strong>@Model.CurrentQuantityAvailable</strong></p>
+
+<div asp-validation-summary="ModelOnly" class="text-danger"></div>
+
+<form asp-action="Adjust" method="post">
+    <input type="hidden" asp-for="InventoryItemId" />
+    <input type="hidden" asp-for="ProductName" />
+    <input type="hidden" asp-for="Sku" />
+    <input type="hidden" asp-for="WarehouseName" />
+    <input type="hidden" asp-for="CurrentQuantityOnHand" />
+    <input type="hidden" asp-for="CurrentQuantityAvailable" />
+
+    <div class="row g-3">
+        <div class="col-md-4">
+            <label asp-for="QuantityDelta" class="form-label">Adjustment quantity</label>
+            <input asp-for="QuantityDelta" class="form-control" placeholder="e.g. 10 or -5" />
+            <div class="form-text">Positive to add stock, negative to remove it.</div>
+            <span asp-validation-for="QuantityDelta" class="text-danger"></span>
+        </div>
+        <div class="col-md-8">
+            <label asp-for="Reason" class="form-label"></label>
+            <input asp-for="Reason" class="form-control" placeholder="e.g. Damaged in warehouse, cycle count correction" />
+            <span asp-validation-for="Reason" class="text-danger"></span>
+        </div>
+    </div>
+
+    <div class="mt-4">
+        <button type="submit" class="btn btn-primary">Apply adjustment</button>
+        <a asp-action="Index" class="btn btn-outline-secondary">Cancel</a>
+    </div>
+</form>
