@@ -25,12 +25,12 @@
 | M4.1 - Layout, navigation, home page | **Complete** | Public layout wired to real catalog data via a `CategoryNavViewComponent` (category names shown, non-clickable until M4.2 builds the destination pages); sticky footer; home page composed by `IHomePageService` (hero/promo banners, featured categories, featured/new-arrival/discounted products - all Active+Published only). New admin-managed `HomePageBanner` entity + CRUD (image upload, soft delete) since hero/promo content must be admin-managed per the brief. Best-sellers/recommended/recently-viewed are honest placeholders pending Milestones 9/5. |
 | M4.2 - Catalog listing pages | **Complete** | Public `CatalogController` serves `/Products` (all), `/Category/{slug}` (includes active descendant subcategories), `/Brand/{slug}`, `/Search` (baseline name/SKU/description/keywords substring match), and `/Brands` (brand index) - all sharing one listing view with grid/list toggle, pagination, active-filter chip + clear, and empty-result state. Category nav, home page featured-category cards, and product-card brand names are now real, clickable links (deferred from M4.1 pending this milestone). Product cards remain non-clickable (Milestone 5). Product cards also show a baseline "Out of stock" badge without hiding out-of-stock items (M4.3 adds an explicit hide-them filter). |
 | M4.3 - Search, filters, sorting, performance | **Complete - scope note** | Filters (price range, category, subcategory, brand, stock availability, discounted, featured, attributes, new arrivals - combinable, persisted in query string), sorting (Relevance/Newest/Price asc+desc/Largest Discount/Name A-Z+Z-A), debounced AJAX search suggestions, and performance work (indexes, in-memory nav caching, lazy-loaded card images) are all implemented. **Rating filter/sort and "Best Selling" sort are deliberately not offered** - there is no rating data (Milestone 12) or order/sales history (Milestone 9) yet to filter/sort by, and a control that silently produced arbitrary results would be misleading. See the "Deferred filter/sort options" note below. |
-| M5.1 - Product detail page | Not started | |
-| M5.2 - Variant resolution & pricing service | Not started | |
-| M5.3 - Recently viewed & recommendations | Not started | |
-| M6.1 - Cart core | Not started | |
-| M6.2 - Cart merge & pricing integrity | Not started | |
-| M6.3 - Wishlist + AJAX | Not started | |
+| M5.1 - Product detail page | **Complete** | Public `/Product/{slug}` page: brand/category/breadcrumbs, image gallery with click-to-zoom modal, price/compare-at/discount%/tax indicator, aggregated stock status + low-stock warning, per-attribute variant selectors (reload-based resolution - see the M5.2 scope note below), quantity selector + disabled Add to Cart, SKU, description, specifications, warranty/returns/shipping, honest placeholders for ratings/reviews/frequently-bought-together/recently-viewed (recently-viewed and related products became real in M5.3). All product cards sitewide (home, listing pages) now link here, closing the loop left open since Milestone 4.1. |
+| M5.2 - Variant resolution & pricing service | **Complete** | Live, no-reload variant switching: a client-side matrix (embedded per page load) disables dropdown options that can't form a real combination given the other selections; the actual switch calls a strict, server-authoritative `GET /Product/{slug}/Resolve` endpoint (rejects any variant that doesn't exist, isn't active, or doesn't belong to the product) and updates SKU/price/compare-at/discount/stock/image without a page reload. New central `IPricingService` (pure calculator, no DB/I-O) computes base/variant/final price, discount amount/%, and a config-driven tax-inclusive flag - promotion adjustment is always 0 for now (no Promotion entity until Milestone 7.1). `ProductDetailService` now uses it as the single source of truth instead of computing price/discount inline. |
+| M5.3 - Recently viewed & recommendations | **Complete** | `IRecentlyViewedService` records a view on every `/Product/{slug}` load - a guest gets a single `HttpOnly` cookie of comma-separated product IDs (no PII), an authenticated user gets a DB row per `(user, product)` upserted and trimmed to `Store:RecentlyViewedMaxItems` (default 10) on every view. Lives in the **Web** project, not Infrastructure, since it needs `HttpContext` - the same reasoning as `ICurrentUserService`. "Related Products" on the product detail page and the home page's "Recently viewed" section are both now backed by real data (`IRecommendationService`'s two-pass category/brand/tag/price-range scoring, and the recently-viewed history respectively) instead of Milestone 4/5.1's placeholders. "Best sellers" and home-page "Recommended for you" remain honest placeholders - both need signals (order history, or a recommendation basis with no anchor product) that don't exist until later milestones. This closes out Milestone 5 in its entirety. |
+| M6.1 - Cart core | **Complete - scope note** | No brief text was available for this sub-milestone in this session (see the completion report), so scope was agreed with the user as reasonable cart-core conventions: `Cart`/`CartItem` entities (one cart per authenticated user or guest token, one line per product-or-variant), add/update-quantity/remove/clear, stock validated against `InventoryItem` with the same untracked/backorder leniency the product detail page uses, and prices always resolved live via `IPricingService` (never snapshotted). Guest carts use an `HttpOnly` cookie (`CartGuestToken`); `ICartOwnerAccessor` (Web) resolves the owner per request the same way `RecentlyViewedService` resolves guest identity, but `CartService` itself stays Infrastructure-hosted since it takes a plain `CartOwner` and has no `HttpContext` dependency of its own. Add to Cart on the product detail page and quantity/remove/clear on the new `/Cart` page are AJAX, CSRF-protected via a request header (not a form field) since they're JSON POSTs - see `_Layout.cshtml`'s `csrf-token` meta tag. Cart merge on login and price/stock re-validation at checkout-adjacent points are explicitly Milestone 6.2's job, not this one's. |
+| M6.2 - Cart merge & pricing integrity | **Complete - scope note** | Same as M6.1: no brief text was available this session, so scope was agreed as reasonable conventions for what the milestone's name implies. **Cart merge**: `ICartService.MergeGuestCartIntoUserCartAsync` runs right after a successful MVC login/register (`AccountController`) - if the user has no cart yet, the guest cart is simply reassigned to them; if they already have one, each guest line either increments a matching line (capped to current stock, never rejected outright - a login can't reasonably fail over a quantity conflict) or moves over as a new line, and the now-empty guest cart is deleted. The JWT API surface doesn't merge - it has no browser cookie to read a guest cart from. **Pricing/stock integrity**: `CartItem.PriceWhenAdded` is a new field storing the price at the moment a line was added or last explicitly touched (re-add, quantity update, or merge all re-stamp it) - purely for comparison, never for billing; `LineTotal` always uses the live price from `IPricingService`, same as M6.1. Every cart read flags `PriceChanged` (with the previous price) when the live price no longer matches, and flags `QuantityExceedsStock` when the line's quantity is now more than current available stock - both purely informational, neither one silently mutates the stored `Quantity`. |
+| M6.3 - Wishlist + AJAX | **Complete - scope note** | Same as M6.1/M6.2: no brief text was available this session, so scope was agreed as reasonable conventions. **Account-only, unlike Cart** - a wishlist is meant to persist indefinitely and follow the customer across devices, which a guest cookie can't do, and it's a lower-frequency action than adding to cart where guest friction actually matters, so there's no guest wishlist at all. **Product-level only, no variant** - a lighter bookmark than a cart line; `WishlistItem` (`BaseEntity`, one row per `(UserId, ProductId)`, `Cascade` FK to `Products` since there's no variant FK to create a multi-cascade-path conflict). `IWishlistService.ToggleAsync` adds if not present, removes if present (idempotent); a product that's since become unpublished/inactive/deleted is silently excluded from the list, the same reasoning `RecentlyViewedService` uses (not Cart's "keep it visible but flagged" approach - a wishlist is browsing-adjacent, not a committed purchase intent). The AJAX toggle button appears only on the product detail page - not on every product card across every listing page, since that would mean touching every card-emitting Storefront service (`HomePageService`, `CatalogBrowseService`, `RecommendationService`, `RecentlyViewedService`) for a nice-to-have, which was judged out of scope for "wishlist works." Found and fixed along the way: an unauthenticated AJAX toggle request got a silently-followed 302-to-login instead of a detectable failure - `Program.cs` now returns a real 401 for requests carrying `Accept: application/json`/`X-Requested-With: XMLHttpRequest`, and `site.js`'s shared `postJson()` helper sends both. This closes out Milestone 6 in its entirety. |
 | M7.1 - Promotions & coupons | Not started | |
 | M7.2 - Tax service | Not started | |
 | M7.3 - Shipping | Not started | |
@@ -241,6 +241,112 @@ dropdown (including a full click-through to search results), category/list
 view toggling with filter-state preservation, and the search-input-safety
 check (a `<script>` tag in the search box rendered as inert text, confirmed
 via console with no execution) all worked as designed on the first pass.
+
+## Bugs found and fixed during Milestone 5.1's own testing
+
+Found and fixed during development, before manual verification:
+
+- The `@attribute`-as-loop-variable-name Razor collision recurred for a
+  *third* time, this time in the product detail page's variant-selector
+  view. Same fix (renamed to `productAttribute`). After this occurrence a
+  persistent memory note was saved (outside this repo, in the assistant's
+  cross-session memory store) specifically to stop this from recurring a
+  fourth time in a future milestone.
+- A design misstep, caught and reverted before it compiled: the first draft
+  of `ProductDetailAttributeDto`'s `SelectedValueId` (only knowable *after*
+  variant resolution, which happens after the attribute list is first built)
+  tried to solve this by subclassing the DTO record with a mutable shadow
+  property (`new int? SelectedValueId { get; set; }`). This doesn't work -
+  C# records don't allow a derived type to relax a base `init`-only property
+  to a settable one via `new` hiding; it's a separate shadowing property, not
+  a real override. Fixed by building attribute groups as plain tuples first,
+  then constructing the final immutable `ProductDetailAttributeDto` list in
+  one pass once the variant is resolved - no mutation needed at all.
+
+No further production bugs were found during manual verification - variant
+switching (both directions), the image zoom modal, all four content tabs,
+breadcrumbs, and the branded 404 for an unknown product slug all worked as
+designed on the first pass.
+
+## Bugs found and fixed during Milestone 5.2's own testing
+
+One real bug, caught only by manual browser testing - a good example of why
+automated tests that assert on C# objects aren't proof the actual JSON wire
+format is correct:
+
+- The live variant-switch AJAX response left the stock badge blank after
+  every switch. Root cause: `System.Text.Json` serializes enums as their
+  underlying **integer** by default, not their name, unless a
+  `JsonStringEnumConverter` is configured. `VariantResolutionDto.StockState`
+  (a `ProductStockState` enum) was serialized as `0`/`1`/`2`/`3`, but the
+  client-side JS looked the value up in a string-keyed object
+  (`{ InStock: ..., LowStock: ... }`) - `stockBadges[0]` matched nothing, so
+  the badge silently disappeared. All 30 automated tests covering this code
+  path passed regardless, because they assert against the `ProductStockState`
+  C# enum value directly and never touch the actual serialized JSON string -
+  exactly the class of gap integration/manual testing exists to catch. Fixed
+  by adding `[property: JsonConverter(typeof(JsonStringEnumConverter))]` to
+  the `StockState` property (scoped to that one property, not a global JSON
+  option change, to avoid affecting the unrelated `/api/v1/auth` JSON
+  surface). Confirmed fixed by re-running the same manual variant-switch
+  test and inspecting `stockBadgeContainer.innerHTML` directly.
+
+## Bugs found and fixed during Milestone 5.3's own testing
+
+No production bugs were found - manual verification (guest cookie round-trip
+via a fresh request cycle, category-based recommendations after adding a
+second product, and the home page's recently-viewed section) all worked as
+designed on the first pass. One test-authoring pitfall was caught while
+writing the automated coverage, not the product code: seeding two products
+with the *default* selling price of `10` and expecting one to be excluded
+from recommendations by category alone - the price-tolerance signal
+(`SellingPrice` within +/-30%) silently qualified it anyway, since both
+products priced identically fell inside the band regardless of category.
+Fixed by giving the "should not match" product a price far outside the
+tolerance window instead of relying on category being the only signal in
+play.
+
+## Bugs found and fixed during Milestone 6.1's own testing
+
+One real bug, caught by the full regression run (not by the new tests
+themselves, which all passed in isolation):
+
+- `TestDatabase.ResetAsync`'s per-run cleanup script deletes every table's
+  rows in a fixed order, and `Products` is deleted partway through. The new
+  `CartItems` table has `Restrict` (not `Cascade`) foreign keys to `Products`
+  and `ProductVariants` - the same reasoning `InventoryItemConfiguration`
+  already established, and the only viable choice given a `CartItem` also
+  reaches `Product` indirectly through `ProductVariant`, and SQL Server
+  rejects multiple cascade paths to the same table. Once `CartFlowTests` left
+  real `Carts`/`CartItems` rows in the shared test database, every other
+  integration test's next run failed at cleanup time with a foreign key
+  violation on `DELETE FROM Products` - 64 unrelated failures from one
+  missing cleanup line. Fixed by adding `DELETE FROM CartItems; DELETE FROM
+  Carts;` (and matching `DBCC CHECKIDENT` reseeds) before the existing
+  `Products` cleanup in `TestDatabase.cs`. A reminder that a new
+  Restrict-FK'd child table must be added to this script the same milestone
+  it's introduced, not left for later.
+
+## Bugs found and fixed during Milestone 6.3's own testing
+
+One real bug, self-caught while writing the integration tests (a scenario
+the manual browser check would have hit next, since it's exactly what the
+product-page toggle button does):
+
+- An anonymous `fetch()` POST to `/Wishlist/Toggle` (an `[Authorize]`
+  action) got ASP.NET Core's default cookie-auth challenge: a `302` to
+  `/Account/Login`, which `fetch()`'s default `redirect: 'follow'` silently
+  follows - the call "succeeds" with a `200` and a login-page HTML body
+  instead of the JSON the client code expects, so `response.json()` throws
+  inside the `.catch()` instead of the intended "redirect to login" branch
+  ever running. Fixed by overriding `CookieAuthenticationOptions.Events
+  .OnRedirectToLogin` in `Program.cs` to return a real `401` when the
+  request carries `Accept: application/json` or
+  `X-Requested-With: XMLHttpRequest`, and adding both headers to `site.js`'s
+  shared `postJson()` helper (used by Cart's endpoints too, so this also
+  quietly hardens those against the same class of issue, even though Cart
+  doesn't require authentication). Verified with a dedicated integration
+  test asserting the real HTTP status is `401`, not a followed-redirect `200`.
 
 ## Known EF Core warnings (benign, not yet addressed)
 

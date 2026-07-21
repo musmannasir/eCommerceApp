@@ -146,8 +146,12 @@ else
     </section>
 }
 
-@* Best sellers depend on real order history, which doesn't exist until Milestone 9;
-   recommendations and recently-viewed are explicitly Milestone 5 placeholders per the brief. *@
+@* Best sellers depend on real order history, which doesn't exist until Milestone 9.
+   "Recommended for you" on the home page has no anchor product to score against
+   (IRecommendationService scores relative to a specific product, as used on the product
+   detail page) - a distinct home-page recommendation signal isn't in scope for Milestone 5,
+   so it stays an honest placeholder. Recently-viewed, however, has no such dependency and
+   is wired to the real IRecentlyViewedService as of Milestone 5.3. *@
 <section class="mb-5">
     <h2 class="h4 mb-3">Best sellers</h2>
     <p class="text-muted">Best sellers will appear here once orders start coming in.</p>
@@ -158,7 +162,15 @@ else
     <p class="text-muted">Personalized recommendations are coming soon.</p>
 </section>
 
-<section class="mb-5">
-    <h2 class="h4 mb-3">Recently viewed</h2>
-    <p class="text-muted">Products you view will show up here.</p>
-</section>
+@if (Model.RecentlyViewed.Count > 0)
+{
+    <section class="mb-5">
+        <h2 class="h4 mb-3">Recently viewed</h2>
+        <div class="row row-cols-2 row-cols-md-3 row-cols-lg-4 g-3">
+            @foreach (var product in Model.RecentlyViewed)
+            {
+                <div class="col">@await Html.PartialAsync("_ProductCard", product)</div>
+            }
+        </div>
+    </section>
+}

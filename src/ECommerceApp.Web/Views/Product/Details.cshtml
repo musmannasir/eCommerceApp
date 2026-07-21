@@ -1,0 +1,386 @@
+@using System.Text.Json
+@model ProductDetailDto
+@{
+    ViewData["Title"] = Model.Name;
+    // Explicit camelCase here to match ASP.NET Core's default JSON casing for the
+    // Resolve() action's Json() result - System.Text.Json.Serialize called directly
+    // (as opposed to through MVC's Json() helper) defaults to PascalCase instead.
+    var jsonOptions = new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
+    var variantMatrixJson = JsonSerializer.Serialize(Model.VariantCombinations, jsonOptions);
+}
+
+<div class="row mt-3">
+    <div class="col-md-5 mb-4">
+        @if (Model.Images.Count > 0)
+        {
+            <img id="mainImage" src="@Model.Images[0].Path" alt="@(Model.Images[0].AltText ?? Model.Name)"
+                 class="img-fluid rounded border mb-2" style="width:100%; max-height:420px; object-fit:cover; cursor:zoom-in;"
+                 data-bs-toggle="modal" data-bs-target="#imageZoomModal" />
+            @if (Model.Images.Count > 1)
+            {
+                <div class="d-flex gap-2 flex-wrap">
+                    @foreach (var image in Model.Images)
+                    {
+                        <img src="@image.Path" alt="@(image.AltText ?? Model.Name)" loading="lazy"
+                             class="border rounded product-thumb" style="width:64px;height:64px;object-fit:cover;cursor:pointer;" />
+                    }
+                </div>
+            }
+
+            <div class="modal fade" id="imageZoomModal" tabindex="-1" aria-hidden="true">
+                <div class="modal-dialog modal-lg modal-dialog-centered">
+                    <div class="modal-content">
+                        <div class="modal-body p-0">
+                            <img id="zoomedImage" src="@Model.Images[0].Path" alt="@Model.Name" class="img-fluid w-100" />
+                        </div>
+                    </div>
+                </div>
+            </div>
+        }
+        else
+        {
+            <div class="bg-light d-flex align-items-center justify-content-center text-muted" style="height:320px">No image</div>
+        }
+    </div>
+
+    <div class="col-md-7">
+        @if (!string.IsNullOrEmpty(Model.BrandName))
+        {
+            @if (!string.IsNullOrEmpty(Model.BrandSlug))
+            {
+                <div class="text-muted"><a href="/Brand/@Model.BrandSlug" class="text-muted">@Model.BrandName</a></div>
+            }
+            else
+            {
+                <div class="text-muted">@Model.BrandName</div>
+            }
+        }
+        <h1 class="h3">@Model.Name</h1>
+        <div class="text-muted small mb-2">
+            SKU: <span id="skuValue">@Model.Sku</span> &middot; <a href="/Category/@Model.CategorySlug" class="text-muted">@Model.CategoryName</a>
+        </div>
+
+        <div class="mb-2">
+            <span class="fs-3 fw-bold" id="priceValue">@Model.SellingPrice.ToString("0.00")</span>
+            <span id="compareAtWrapper" style="display:@(Model.CompareAtPrice.HasValue ? "inline" : "none")">
+                <span class="text-muted text-decoration-line-through fs-5 ms-2" id="compareAtValue">@(Model.CompareAtPrice?.ToString("0.00"))</span>
+                <span class="badge text-bg-danger ms-1" id="discountBadge">-@(Model.DiscountPercent)%</span>
+            </span>
+            <div class="text-muted small">
+                @(Model.IsTaxable ? (Model.IsTaxInclusive ? $"Tax ({Model.TaxCategory}) included" : $"Tax ({Model.TaxCategory}) calculated at checkout") : "No tax applicable")
+            </div>
+        </div>
+
+        <div class="mb-3" id="stockBadgeContainer">
+            @await Html.PartialAsync("_StockBadge", Model)
+        </div>
+
+        @if (Model.HasVariants)
+        {
+            <div id="combinationWarning" class="alert alert-warning py-2 small" style="display:@(Model.SelectedCombinationUnavailable ? "block" : "none")">
+                That exact combination isn't available - showing the closest match instead.
+            </div>
+            <form method="get" asp-action="Details" asp-route-slug="@Model.Slug" id="variantForm" class="mb-3">
+                @foreach (var productAttribute in Model.Attributes)
+                {
+                    <div class="mb-2">
+                        <label class="form-label small fw-semibold">@productAttribute.Name</label>
+                        <select name="attr" class="form-select form-select-sm variant-attribute-select" style="max-width:250px" data-attribute-id="@productAttribute.Id">
+                            @foreach (var value in productAttribute.Values)
+                            {
+                                <option value="@value.Id" selected="@(productAttribute.SelectedValueId == value.Id)">@value.Value</option>
+                            }
+                        </select>
+                    </div>
+                }
+                <noscript><button type="submit" class="btn btn-sm btn-outline-secondary">Update selection</button></noscript>
+            </form>
+        }
+
+        <div class="d-flex align-items-end gap-2 mb-4">
+            <div>
+                <label class="form-label small fw-semibold" for="quantityInput">Quantity</label>
+                <input id="quantityInput" type="number" min="1" value="1" class="form-control form-control-sm" style="width:80px" />
+            </div>
+            <button type="button" id="addToCartButton" class="btn btn-primary" data-product-id="@Model.Id"
+                    disabled="@(Model.StockState == ProductStockState.OutOfStock)">Add to Cart</button>
+            <button type="button" id="wishlistToggleButton" class="btn @(Model.IsWishlisted ? "btn-danger" : "btn-outline-danger")"
+                    data-product-id="@Model.Id" data-wishlisted="@Model.IsWishlisted.ToString().ToLowerInvariant()">
+                @(Model.IsWishlisted ? "In Wishlist" : "Add to Wishlist")
+            </button>
+        </div>
+        <div class="small mb-3 d-none" id="addToCartMessage"></div>
+
+        @if (!string.IsNullOrEmpty(Model.ShortDescription))
+        {
+            <p>@Model.ShortDescription</p>
+        }
+    </div>
+</div>
+
+<ul class="nav nav-tabs mt-3" role="tablist">
+    <li class="nav-item"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#tab-description" type="button">Description</button></li>
+    @if (Model.Specifications.Count > 0)
+    {
+        <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-specs" type="button">Specifications</button></li>
+    }
+    <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-shipping" type="button">Warranty, Returns &amp; Shipping</button></li>
+    <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-reviews" type="button">Reviews</button></li>
+</ul>
+<div class="tab-content border border-top-0 p-3 mb-4">
+    <div class="tab-pane fade show active" id="tab-description">
+        @if (!string.IsNullOrEmpty(Model.FullDescription))
+        {
+            <p>@Model.FullDescription</p>
+        }
+        else
+        {
+            <p class="text-muted">No description provided.</p>
+        }
+    </div>
+    @if (Model.Specifications.Count > 0)
+    {
+        <div class="tab-pane fade" id="tab-specs">
+            <table class="table table-sm">
+                <tbody>
+                    @foreach (var spec in Model.Specifications)
+                    {
+                        <tr><th class="w-25">@spec.Name</th><td>@spec.Value</td></tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+    <div class="tab-pane fade" id="tab-shipping">
+        <h6>Warranty</h6>
+        <p class="text-muted">@(Model.WarrantyInformation ?? "No warranty information provided.")</p>
+        <h6>Returns</h6>
+        <p class="text-muted">@(Model.ReturnEligibility ?? "Standard return policy applies.")</p>
+        <h6>Shipping</h6>
+        <p class="text-muted">Shipping methods and rates are calculated at checkout.</p>
+    </div>
+    <div class="tab-pane fade" id="tab-reviews">
+        <p class="text-muted">No reviews yet. Customer reviews and ratings are coming in a later milestone.</p>
+    </div>
+</div>
+
+<h2 class="h5">Related Products</h2>
+@if (Model.RelatedProducts.Count > 0)
+{
+    <div class="row row-cols-2 row-cols-md-3 row-cols-lg-4 g-3 mb-4">
+        @foreach (var related in Model.RelatedProducts)
+        {
+            <div class="col">@await Html.PartialAsync("~/Views/Home/_ProductCard.cshtml", related)</div>
+        }
+    </div>
+}
+else
+{
+    <p class="text-muted mb-4">No related products found.</p>
+}
+
+<h2 class="h6">Frequently Bought Together</h2>
+<p class="text-muted small mb-4">Coming in a later milestone.</p>
+
+@if (Model.RecentlyViewed.Count > 0)
+{
+    <h2 class="h5">Recently Viewed</h2>
+    <div class="row row-cols-2 row-cols-md-3 row-cols-lg-4 g-3 mb-4">
+        @foreach (var viewed in Model.RecentlyViewed)
+        {
+            <div class="col">@await Html.PartialAsync("~/Views/Home/_ProductCard.cshtml", viewed)</div>
+        }
+    </div>
+}
+
+@section Scripts {
+    <script id="variantMatrixData" type="application/json">@Html.Raw(variantMatrixJson)</script>
+    <script>
+        (function () {
+            var mainImage = document.getElementById('mainImage');
+            var zoomedImage = document.getElementById('zoomedImage');
+            document.querySelectorAll('.product-thumb').forEach(function (thumb) {
+                thumb.addEventListener('click', function () {
+                    if (mainImage) { mainImage.src = thumb.src; }
+                    if (zoomedImage) { zoomedImage.src = thumb.src; }
+                });
+            });
+            if (mainImage) {
+                mainImage.addEventListener('click', function () {
+                    if (zoomedImage) { zoomedImage.src = mainImage.src; }
+                });
+            }
+
+            // Add to Cart (Milestone 6.1) - set up before the no-variants early
+            // return below, since a product with no options needs this too.
+            var addToCartButton = document.getElementById('addToCartButton');
+            var addToCartMessage = document.getElementById('addToCartMessage');
+            var currentVariantId = @Html.Raw(JsonSerializer.Serialize(Model.SelectedVariantId));
+
+            function showAddToCartMessage(text, isError) {
+                if (!addToCartMessage) { return; }
+                addToCartMessage.textContent = text;
+                addToCartMessage.classList.remove('d-none', 'text-danger', 'text-success');
+                addToCartMessage.classList.add(isError ? 'text-danger' : 'text-success');
+            }
+
+            if (addToCartButton) {
+                addToCartButton.addEventListener('click', function () {
+                    var quantityInput = document.getElementById('quantityInput');
+                    var quantity = quantityInput ? parseInt(quantityInput.value, 10) : 1;
+                    postJson('/Cart/Add', {
+                        productId: @Model.Id,
+                        productVariantId: currentVariantId,
+                        quantity: quantity || 1
+                    }).then(function (response) {
+                        if (response.ok) {
+                            return response.json().then(function (cart) {
+                                var badge = document.getElementById('cartItemCount');
+                                if (badge) {
+                                    badge.textContent = cart.totalItemCount;
+                                    badge.classList.toggle('d-none', cart.totalItemCount === 0);
+                                }
+                                showAddToCartMessage('Added to cart.', false);
+                            });
+                        }
+                        return response.json().then(function (problem) {
+                            showAddToCartMessage((problem && problem.detail) || 'Could not add this item to your cart.', true);
+                        });
+                    }).catch(function () {
+                        showAddToCartMessage('Could not add this item to your cart.', true);
+                    });
+                });
+            }
+
+            // Wishlist toggle (Milestone 6.3) - account-only; a 401 here means
+            // the visitor isn't signed in, so send them to log in and back.
+            var wishlistToggleButton = document.getElementById('wishlistToggleButton');
+            if (wishlistToggleButton) {
+                wishlistToggleButton.addEventListener('click', function () {
+                    postJson('/Wishlist/Toggle', { productId: @Model.Id }).then(function (response) {
+                        if (response.status === 401 || response.status === 403) {
+                            window.location.href = '/Account/Login?returnUrl=' + encodeURIComponent(window.location.pathname);
+                            return;
+                        }
+                        if (!response.ok) {
+                            showAddToCartMessage('Could not update your wishlist.', true);
+                            return;
+                        }
+                        response.json().then(function (result) {
+                            wishlistToggleButton.textContent = result.isWishlisted ? 'In Wishlist' : 'Add to Wishlist';
+                            wishlistToggleButton.classList.toggle('btn-danger', result.isWishlisted);
+                            wishlistToggleButton.classList.toggle('btn-outline-danger', !result.isWishlisted);
+
+                            var wishlistBadge = document.getElementById('wishlistItemCount');
+                            if (wishlistBadge) {
+                                wishlistBadge.textContent = result.itemCount;
+                                wishlistBadge.classList.toggle('d-none', result.itemCount === 0);
+                            }
+                        });
+                    }).catch(function () {
+                        showAddToCartMessage('Could not update your wishlist.', true);
+                    });
+                });
+            }
+
+            var selects = Array.prototype.slice.call(document.querySelectorAll('.variant-attribute-select'));
+            if (selects.length === 0) {
+                return;
+            }
+
+            var matrixDataElement = document.getElementById('variantMatrixData');
+            var combinations = matrixDataElement ? JSON.parse(matrixDataElement.textContent) : [];
+            var productSlug = @Html.Raw(JsonSerializer.Serialize(Model.Slug));
+            var combinationWarning = document.getElementById('combinationWarning');
+
+            function currentSelection() {
+                return selects.map(function (select) { return parseInt(select.value, 10); });
+            }
+
+            // A candidate value for one select is enabled if some variant combination
+            // contains it together with every other select's currently chosen value.
+            function refreshDisabledOptions() {
+                selects.forEach(function (targetSelect) {
+                    var othersSelected = selects
+                        .filter(function (s) { return s !== targetSelect; })
+                        .map(function (s) { return parseInt(s.value, 10); });
+
+                    Array.prototype.slice.call(targetSelect.options).forEach(function (option) {
+                        var candidateId = parseInt(option.value, 10);
+                        var isPossible = combinations.some(function (combo) {
+                            var ids = combo.attributeValueIds;
+                            return ids.indexOf(candidateId) !== -1 && othersSelected.every(function (id) { return ids.indexOf(id) !== -1; });
+                        });
+                        option.disabled = !isPossible;
+                    });
+                });
+            }
+
+            function resolveVariant() {
+                var selectedIds = currentSelection();
+                var match = combinations.find(function (combo) {
+                    return combo.attributeValueIds.length === selectedIds.length &&
+                        selectedIds.every(function (id) { return combo.attributeValueIds.indexOf(id) !== -1; });
+                });
+
+                if (!match) {
+                    if (combinationWarning) { combinationWarning.style.display = 'block'; }
+                    currentVariantId = null;
+                    if (addToCartButton) { addToCartButton.disabled = true; }
+                    return;
+                }
+
+                if (combinationWarning) { combinationWarning.style.display = 'none'; }
+
+                fetch('/Product/' + encodeURIComponent(productSlug) + '/Resolve?variantId=' + match.variantId)
+                    .then(function (response) { return response.ok ? response.json() : Promise.reject(); })
+                    .then(function (data) {
+                        document.getElementById('skuValue').textContent = data.sku;
+                        document.getElementById('priceValue').textContent = data.sellingPrice.toFixed(2);
+
+                        var compareAtWrapper = document.getElementById('compareAtWrapper');
+                        if (data.compareAtPrice) {
+                            document.getElementById('compareAtValue').textContent = data.compareAtPrice.toFixed(2);
+                            document.getElementById('discountBadge').textContent = '-' + data.discountPercent + '%';
+                            compareAtWrapper.style.display = 'inline';
+                        } else {
+                            compareAtWrapper.style.display = 'none';
+                        }
+
+                        if (data.imagePath && mainImage) {
+                            mainImage.src = data.imagePath;
+                            if (zoomedImage) { zoomedImage.src = data.imagePath; }
+                        }
+
+                        var stockContainer = document.getElementById('stockBadgeContainer');
+                        var stockBadges = {
+                            InStock: '<span class="badge text-bg-success">In Stock</span>',
+                            LowStock: '<span class="badge text-bg-warning text-dark">Low Stock - only ' + data.availableQuantity + ' left</span>',
+                            Backorder: '<span class="badge text-bg-info text-dark">Available on backorder</span>',
+                            OutOfStock: '<span class="badge text-bg-secondary">Out of Stock</span>'
+                        };
+                        stockContainer.innerHTML = stockBadges[data.stockState] || '';
+
+                        currentVariantId = data.variantId;
+                        if (addToCartButton) { addToCartButton.disabled = data.stockState === 'OutOfStock'; }
+                    })
+                    .catch(function () {
+                        if (combinationWarning) {
+                            combinationWarning.textContent = 'Could not load this option - please try again.';
+                            combinationWarning.style.display = 'block';
+                        }
+                        currentVariantId = null;
+                        if (addToCartButton) { addToCartButton.disabled = true; }
+                    });
+            }
+
+            refreshDisabledOptions();
+            selects.forEach(function (select) {
+                select.addEventListener('change', function () {
+                    refreshDisabledOptions();
+                    resolveVariant();
+                });
+            });
+        }());
+    </script>
+}

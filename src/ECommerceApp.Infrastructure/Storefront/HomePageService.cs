@@ -18,10 +18,12 @@ public sealed class HomePageService : IHomePageService
     private const int FeaturedCategoryCount = 6;
 
     private readonly ApplicationDbContext _dbContext;
+    private readonly IRecentlyViewedService _recentlyViewedService;
 
-    public HomePageService(ApplicationDbContext dbContext)
+    public HomePageService(ApplicationDbContext dbContext, IRecentlyViewedService recentlyViewedService)
     {
         _dbContext = dbContext;
+        _recentlyViewedService = recentlyViewedService;
     }
 
     public async Task<HomePageDto> GetHomePageAsync(CancellationToken cancellationToken = default)
@@ -77,7 +79,9 @@ public sealed class HomePageService : IHomePageService
             .Select(CardProjection())
             .ToListAsync(cancellationToken);
 
-        return new HomePageDto(heroBanners, promoBanners, featuredCategories, featuredProducts, newArrivals, discountedProducts);
+        var recentlyViewed = await _recentlyViewedService.GetRecentlyViewedAsync(cancellationToken: cancellationToken);
+
+        return new HomePageDto(heroBanners, promoBanners, featuredCategories, featuredProducts, newArrivals, discountedProducts, recentlyViewed);
     }
 
     /// <summary>

@@ -1,12 +1,15 @@
 @inject Microsoft.Extensions.Configuration.IConfiguration Configuration
+@inject Microsoft.AspNetCore.Antiforgery.IAntiforgery Antiforgery
 @{
     var storeName = Configuration["Store:Name"] ?? "ECommerceApp Store";
+    var csrfToken = Antiforgery.GetAndStoreTokens(Context).RequestToken;
 }
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="csrf-token" content="@csrfToken" />
     <title>@ViewData["Title"] - @storeName</title>
     <link rel="stylesheet" href="~/lib/bootstrap/dist/css/bootstrap.min.css" />
     <link rel="stylesheet" href="~/css/site.css" asp-append-version="true" />
@@ -39,8 +42,8 @@
                         @await Component.InvokeAsync("CategoryNav")
                     </div>
                     <ul class="navbar-nav ms-auto align-items-lg-center">
-                        <li class="nav-item"><span class="nav-link disabled" aria-disabled="true">Wishlist</span></li>
-                        <li class="nav-item"><span class="nav-link disabled" aria-disabled="true">Cart</span></li>
+                        <li class="nav-item">@await Component.InvokeAsync("WishlistSummary")</li>
+                        <li class="nav-item">@await Component.InvokeAsync("CartSummary")</li>
                         @if (User.Identity?.IsAuthenticated == true)
                         {
                             <li class="nav-item"><a class="nav-link" asp-controller="Account" asp-action="Profile">Hi, @User.Identity.Name</a></li>

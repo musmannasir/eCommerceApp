@@ -414,12 +414,93 @@ home page excludes any banner without one.
 | DisplayOrder | int | No | |
 | IsActive | bit | No | |
 
+## RecentlyViewedItems
+
+Authenticated-customer recently-viewed history (Milestone 5.3). A guest's
+history is tracked in a cookie instead - a comma-separated list of product
+IDs on a single `HttpOnly` cookie, no table involved - so this table only
+ever holds rows for signed-in users. One row per `(UserId, ProductId)`;
+viewing the same product again updates `ViewedAtUtc` in place rather than
+inserting a duplicate, and rows beyond `Store:RecentlyViewedMaxItems` (config,
+default 10) are deleted on every view, oldest `ViewedAtUtc` first.
+
+| Column | Type | Nullable | Purpose |
+|---|---|---|---|
+| Id | int (identity) | No | Surrogate key |
+| UserId | nvarchar(450) | No | Plain string, not a navigation property - `ApplicationUser` lives in Infrastructure and Domain cannot reference it (same pattern as `RefreshTokens`/`UserSessions`) |
+| ProductId | int (FK -> Products) | No | Cascade delete |
+| ViewedAtUtc | datetime2 | No | Updated (not inserted) on a repeat view; drives both display order and trim-to-max |
+
+Indexes: unique on `(UserId, ProductId)`; non-unique on `(UserId, ViewedAtUtc)`
+for the ordered-history query. Plain `BaseEntity` - no soft delete or
+`RowVersion`, same reasoning as `ProductTagMappings`/`SupplierProducts`: a
+rolling, self-pruning record with no audit or concurrency need.
+
+## Carts / CartItems
+
+Cart core (Milestone 6.1) plus merge and pricing/stock integrity (Milestone
+6.2). A `Cart` is owned by exactly one of `UserId` (authenticated) or
+`GuestToken` (a value from a cookie, never both/neither - two filtered
+unique indexes enforce this) and is created lazily on the first item added.
+`LineTotal` is always computed live via `IPricingService`, never from a
+stored value - `CartItem.PriceWhenAdded` exists only so a read can *detect
+and flag* that the price changed, never to charge it.
+
+**Carts**
+
+| Column | Type | Nullable | Purpose |
+|---|---|---|---|
+| Id | int (identity) | No | Surrogate key |
+| UserId | nvarchar(450) | Yes | Set for an authenticated user's cart; unique when present |
+| GuestToken | nvarchar(64) | Yes | Set for a guest's cart (from the `CartGuestToken` cookie); unique when present |
+| CreatedAtUtc | datetime2 | No | |
+| UpdatedAtUtc | datetime2 | No | Bumped on every add/update/remove/clear |
+
+**CartItems**
+
+| Column | Type | Nullable | Purpose |
+|---|---|---|---|
+| Id | int (identity) | No | Surrogate key |
+| CartId | int (FK -> Carts) | No | Cascade delete |
+| ProductId | int (FK -> Products) | No | Restrict - same reasoning as `InventoryItems` (Milestone 3.1): a product is never physically deleted, and a `Cascade` here plus an indirect path via `ProductVariant -> Product` would be a multiple-cascade-paths error in SQL Server |
+| ProductVariantId | int (FK -> ProductVariants) | Yes | Restrict, same reasoning; null for a product with no variants |
+| Quantity | int | No | Never silently changed by a read - a stock shortfall is only ever flagged (`QuantityExceedsStock`), and the customer adjusts it themselves |
+| PriceWhenAdded | decimal(18,2) | No | Milestone 6.2. Re-stamped to the current live price on every add/merge/quantity-update - never read for billing, only compared against the live price to flag `PriceChanged` |
+| AddedAtUtc | datetime2 | No | |
+
+Indexes: unique on `(CartId, ProductId)` filtered where `ProductVariantId IS
+NULL`, and unique on `(CartId, ProductVariantId)` filtered where it `IS NOT
+NULL` - the same "one purchasable unit, simple-or-variant, never both" pair
+of filtered indexes `InventoryItems` uses. Both tables are plain
+`BaseEntity` - no soft delete or `RowVersion`, the same reasoning as
+`ProductTagMappings`/`RecentlyViewedItems`: rolling, low-stakes records with
+no audit or concurrency need.
+
+## WishlistItems
+
+Wishlist (Milestone 6.3) - account-only, no guest cookie support (unlike
+Cart), and product-level only, no variant (a lighter bookmark than a cart
+line - variant selection happens later if the customer moves it into their
+cart).
+
+| Column | Type | Nullable | Purpose |
+|---|---|---|---|
+| Id | int (identity) | No | Surrogate key |
+| UserId | nvarchar(450) | No | Plain string, not a navigation property - same reasoning as `RecentlyViewedItems`/`RefreshTokens` |
+| ProductId | int (FK -> Products) | No | Cascade delete - safe here (unlike `CartItems`) since there's no second FK to `ProductVariants` creating a multi-cascade-path conflict |
+| AddedAtUtc | datetime2 | No | Drives display order (most-recently-added first) |
+
+Indexes: unique on `(UserId, ProductId)` - toggling an already-wishlisted
+product removes the row rather than allowing a duplicate. Plain
+`BaseEntity` - no soft delete or `RowVersion`, same reasoning as
+`RecentlyViewedItems`.
+
 ## Soft delete and RowVersion
 
 Every table above (except the pure join tables `ProductTagMappings`,
-`ProductVariantAttributeValues`, and `SupplierProducts`, and the immutable
-ledger tables `StockMovements`, `StockAdjustments`, `GoodsReceipts`, and
-`GoodsReceiptItems`) inherits `AuditableEntity`:
+`ProductVariantAttributeValues`, `SupplierProducts`, `RecentlyViewedItems`,
+`Carts`, `CartItems`, and `WishlistItems`; and the immutable ledger tables
+`StockMovements`, `StockAdjustments`, `GoodsReceipts`, and `GoodsReceiptItems`) inherits `AuditableEntity`:
 `IsDeleted` (soft
 delete, globally filtered out of normal queries) and `RowVersion` - a real SQL
 Server `rowversion`/`timestamp` column and EF Core concurrency token (see

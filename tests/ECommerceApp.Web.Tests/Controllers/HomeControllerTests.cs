@@ -14,7 +14,7 @@ public class HomeControllerTests
     {
         var homePageService = new Mock<IHomePageService>();
         homePageService.Setup(s => s.GetHomePageAsync(It.IsAny<CancellationToken>())).ReturnsAsync(
-            new HomePageDto([], [], [], [], [], []));
+            new HomePageDto([], [], [], [], [], [], []));
 
         return new HomeController(homePageService.Object)
         {
