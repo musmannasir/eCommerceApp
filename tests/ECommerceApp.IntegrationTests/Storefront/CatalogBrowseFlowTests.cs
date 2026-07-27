@@ -63,7 +63,7 @@ public class CatalogBrowseFlowTests
 
         var client = _fixture.Factory.CreateClient();
 
-        var productsResponse = await client.GetAsync("/Products");
+        var productsResponse = await client.GetAsync("/Products?sort=Newest");
         var productsBody = await productsResponse.Content.ReadAsStringAsync();
         productsResponse.IsSuccessStatusCode.Should().BeTrue(because: productsBody);
         productsBody.Should().Contain($"Widget {suffix}");
