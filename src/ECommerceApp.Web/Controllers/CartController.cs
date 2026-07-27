@@ -10,6 +10,8 @@ namespace ECommerceApp.Web.Controllers;
 
 public record RemoveCartItemRequest(int CartItemId);
 
+public record ApplyCouponRequest(string CouponCode);
+
 /// <summary>
 /// The cart page itself is a normal GET view; every mutation is a small AJAX
 /// JSON endpoint (like the M5.2 live variant resolver), CSRF-protected via a
@@ -108,5 +110,28 @@ public class CartController : Controller
         return Json(cart);
     }
 
-    private static CartDto EmptyCart => new(null, Array.Empty<CartItemDto>(), 0, 0);
+    [HttpPost("ApplyCoupon")]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> ApplyCoupon([FromBody] ApplyCouponRequest request, CancellationToken cancellationToken)
+    {
+        var owner = _cartOwnerAccessor.TryGetOwner();
+        if (owner is null || string.IsNullOrWhiteSpace(request.CouponCode))
+        {
+            return this.ToProblem(Error.Validation("cart.coupon_code_required", "Please enter a coupon code."));
+        }
+
+        var result = await _cartService.ApplyCouponAsync(owner, request.CouponCode, cancellationToken);
+        return result.IsFailure ? this.ToProblem(result.FirstError) : Json(result.Value);
+    }
+
+    [HttpPost("RemoveCoupon")]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> RemoveCoupon(CancellationToken cancellationToken)
+    {
+        var owner = _cartOwnerAccessor.TryGetOwner();
+        var cart = owner is null ? EmptyCart : await _cartService.RemoveCouponAsync(owner, cancellationToken);
+        return Json(cart);
+    }
+
+    private static CartDto EmptyCart => new(null, Array.Empty<CartItemDto>(), 0, 0, null, null, 0, 0, 0, false, 0, false);
 }

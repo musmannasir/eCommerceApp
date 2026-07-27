@@ -30,6 +30,9 @@ namespace ECommerceApp.Infrastructure.Persistence.Migrations
 
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
 
+                    b.Property<int?>("AppliedPromotionId")
+                        .HasColumnType("int");
+
                     b.Property<DateTime>("CreatedAtUtc")
                         .HasColumnType("datetime2");
 
@@ -45,6 +48,8 @@ namespace ECommerceApp.Infrastructure.Persistence.Migrations
                         .HasColumnType("nvarchar(450)");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("AppliedPromotionId");
 
                     b.HasIndex("GuestToken")
                         .IsUnique()
@@ -1447,6 +1452,102 @@ namespace ECommerceApp.Infrastructure.Persistence.Migrations
                     b.ToTable("HomePageBanners");
                 });
 
+            modelBuilder.Entity("ECommerceApp.Domain.Marketing.Promotion", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("CouponCode")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("CreatedByUserId")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("Description")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<int>("DiscountType")
+                        .HasColumnType("int");
+
+                    b.Property<decimal>("DiscountValue")
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<DateTime?>("EndsAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("bit");
+
+                    b.Property<decimal?>("MaxDiscountAmount")
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<int?>("MaxTotalUses")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("MaxUsesPerCustomer")
+                        .HasColumnType("int");
+
+                    b.Property<decimal?>("MinimumOrderAmount")
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.Property<int?>("ScopeBrandId")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("ScopeCategoryId")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("ScopeProductId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("ScopeType")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime>("StartsAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime?>("UpdatedAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("UpdatedByUserId")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CouponCode")
+                        .IsUnique()
+                        .HasFilter("[CouponCode] IS NOT NULL");
+
+                    b.HasIndex("ScopeBrandId");
+
+                    b.HasIndex("ScopeCategoryId");
+
+                    b.HasIndex("ScopeProductId");
+
+                    b.ToTable("Promotions");
+                });
+
             modelBuilder.Entity("ECommerceApp.Domain.Security.RefreshToken", b =>
                 {
                     b.Property<int>("Id")
@@ -1581,6 +1682,87 @@ namespace ECommerceApp.Infrastructure.Persistence.Migrations
                     b.ToTable("UserSessions");
                 });
 
+            modelBuilder.Entity("ECommerceApp.Domain.Shipping.ShippingMethod", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<decimal>("BaseRate")
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<string>("CountryCode")
+                        .IsRequired()
+                        .HasMaxLength(2)
+                        .HasColumnType("nvarchar(2)");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("CreatedByUserId")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("Description")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<int>("DisplayOrder")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("EstimatedDeliveryDaysMax")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("EstimatedDeliveryDaysMin")
+                        .HasColumnType("int");
+
+                    b.Property<decimal?>("FreeShippingThreshold")
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<decimal>("RatePerKg")
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<string>("RegionCode")
+                        .HasMaxLength(10)
+                        .HasColumnType("nvarchar(10)");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.Property<DateTime?>("UpdatedAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("UpdatedByUserId")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CountryCode", "Name")
+                        .IsUnique()
+                        .HasFilter("[RegionCode] IS NULL");
+
+                    b.HasIndex("CountryCode", "RegionCode", "Name")
+                        .IsUnique()
+                        .HasFilter("[RegionCode] IS NOT NULL");
+
+                    b.ToTable("ShippingMethods");
+                });
+
             modelBuilder.Entity("ECommerceApp.Domain.Storefront.RecentlyViewedItem", b =>
                 {
                     b.Property<int>("Id")
@@ -1610,6 +1792,68 @@ namespace ECommerceApp.Infrastructure.Persistence.Migrations
                     b.HasIndex("UserId", "ViewedAtUtc");
 
                     b.ToTable("RecentlyViewedItems");
+                });
+
+            modelBuilder.Entity("ECommerceApp.Domain.Taxation.TaxRate", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("CountryCode")
+                        .IsRequired()
+                        .HasMaxLength(2)
+                        .HasColumnType("nvarchar(2)");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("CreatedByUserId")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("bit");
+
+                    b.Property<decimal>("RatePercent")
+                        .HasColumnType("decimal(9,4)");
+
+                    b.Property<string>("RegionCode")
+                        .HasMaxLength(10)
+                        .HasColumnType("nvarchar(10)");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.Property<string>("TaxCategory")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<DateTime?>("UpdatedAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("UpdatedByUserId")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CountryCode", "TaxCategory")
+                        .IsUnique()
+                        .HasFilter("[RegionCode] IS NULL");
+
+                    b.HasIndex("CountryCode", "RegionCode", "TaxCategory")
+                        .IsUnique()
+                        .HasFilter("[RegionCode] IS NOT NULL");
+
+                    b.ToTable("TaxRates");
                 });
 
             modelBuilder.Entity("ECommerceApp.Domain.Wishlist.WishlistItem", b =>
@@ -1861,6 +2105,16 @@ namespace ECommerceApp.Infrastructure.Persistence.Migrations
                     b.HasKey("UserId", "LoginProvider", "Name");
 
                     b.ToTable("AspNetUserTokens", (string)null);
+                });
+
+            modelBuilder.Entity("ECommerceApp.Domain.Carts.Cart", b =>
+                {
+                    b.HasOne("ECommerceApp.Domain.Marketing.Promotion", "AppliedPromotion")
+                        .WithMany()
+                        .HasForeignKey("AppliedPromotionId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.Navigation("AppliedPromotion");
                 });
 
             modelBuilder.Entity("ECommerceApp.Domain.Carts.CartItem", b =>
@@ -2150,6 +2404,30 @@ namespace ECommerceApp.Infrastructure.Persistence.Migrations
                     b.Navigation("Product");
 
                     b.Navigation("Supplier");
+                });
+
+            modelBuilder.Entity("ECommerceApp.Domain.Marketing.Promotion", b =>
+                {
+                    b.HasOne("ECommerceApp.Domain.Catalog.Brand", "ScopeBrand")
+                        .WithMany()
+                        .HasForeignKey("ScopeBrandId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("ECommerceApp.Domain.Catalog.Category", "ScopeCategory")
+                        .WithMany()
+                        .HasForeignKey("ScopeCategoryId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("ECommerceApp.Domain.Catalog.Product", "ScopeProduct")
+                        .WithMany()
+                        .HasForeignKey("ScopeProductId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.Navigation("ScopeBrand");
+
+                    b.Navigation("ScopeCategory");
+
+                    b.Navigation("ScopeProduct");
                 });
 
             modelBuilder.Entity("ECommerceApp.Domain.Storefront.RecentlyViewedItem", b =>

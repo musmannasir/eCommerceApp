@@ -100,7 +100,9 @@ function postJson(url, body) {
 (function () {
     var hasCartItems = document.querySelectorAll('.cart-item').length > 0;
     var clearButton = document.getElementById('cartClearButton');
-    if (!hasCartItems && !clearButton) {
+    var applyCouponButton = document.getElementById('cartApplyCouponButton');
+    var removeCouponButton = document.getElementById('cartRemoveCouponButton');
+    if (!hasCartItems && !clearButton && !applyCouponButton && !removeCouponButton) {
         return;
     }
 
@@ -146,6 +148,23 @@ function postJson(url, body) {
     if (clearButton) {
         clearButton.addEventListener('click', function () {
             postJson('/Cart/Clear').then(handleResponse);
+        });
+    }
+
+    if (applyCouponButton) {
+        applyCouponButton.addEventListener('click', function () {
+            var input = document.getElementById('cartCouponInput');
+            var couponCode = input ? input.value.trim() : '';
+            if (!couponCode) {
+                return;
+            }
+            postJson('/Cart/ApplyCoupon', { couponCode: couponCode }).then(handleResponse);
+        });
+    }
+
+    if (removeCouponButton) {
+        removeCouponButton.addEventListener('click', function () {
+            postJson('/Cart/RemoveCoupon').then(handleResponse);
         });
     }
 }());

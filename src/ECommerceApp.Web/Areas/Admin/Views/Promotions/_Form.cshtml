@@ -1,0 +1,134 @@
+@model PromotionFormViewModel
+
+<input type="hidden" asp-for="Id" />
+<div asp-validation-summary="ModelOnly"></div>
+
+<div class="mb-3">
+    <label asp-for="Name" class="form-label"></label>
+    <input asp-for="Name" class="form-control" />
+    <span asp-validation-for="Name" class="text-danger small"></span>
+</div>
+
+<div class="mb-3">
+    <label asp-for="Description" class="form-label"></label>
+    <textarea asp-for="Description" class="form-control" rows="2"></textarea>
+</div>
+
+<div class="mb-3">
+    <label asp-for="CouponCode" class="form-label"></label>
+    <input asp-for="CouponCode" class="form-control" placeholder="Leave blank for an automatic promotion (no code to enter)" />
+    <span asp-validation-for="CouponCode" class="text-danger small"></span>
+</div>
+
+<div class="row">
+    <div class="col-md-6 mb-3">
+        <label asp-for="DiscountType" class="form-label"></label>
+        <select asp-for="DiscountType" class="form-select">
+            <option value="Percentage">Percentage</option>
+            <option value="FixedAmount">Fixed amount</option>
+        </select>
+    </div>
+    <div class="col-md-6 mb-3">
+        <label asp-for="DiscountValue" class="form-label"></label>
+        <input asp-for="DiscountValue" class="form-control" type="number" step="0.01" min="0" />
+        <span asp-validation-for="DiscountValue" class="text-danger small"></span>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-md-4 mb-3">
+        <label asp-for="ScopeType" class="form-label"></label>
+        <select asp-for="ScopeType" class="form-select" id="ScopeTypeSelect">
+            <option value="EntireOrder">Entire order</option>
+            <option value="Category">Category</option>
+            <option value="Brand">Brand</option>
+            <option value="Product">Product</option>
+        </select>
+    </div>
+    <div class="col-md-4 mb-3" data-scope-field="Category">
+        <label asp-for="ScopeCategoryId" class="form-label"></label>
+        <select asp-for="ScopeCategoryId" class="form-select"
+                asp-items="@(new SelectList(Model.AvailableCategories, nameof(CategoryDto.Id), nameof(CategoryDto.Name)))">
+            <option value="">-- Select --</option>
+        </select>
+        <span asp-validation-for="ScopeCategoryId" class="text-danger small"></span>
+    </div>
+    <div class="col-md-4 mb-3" data-scope-field="Brand">
+        <label asp-for="ScopeBrandId" class="form-label"></label>
+        <select asp-for="ScopeBrandId" class="form-select"
+                asp-items="@(new SelectList(Model.AvailableBrands, nameof(BrandDto.Id), nameof(BrandDto.Name)))">
+            <option value="">-- Select --</option>
+        </select>
+        <span asp-validation-for="ScopeBrandId" class="text-danger small"></span>
+    </div>
+    <div class="col-md-4 mb-3" data-scope-field="Product">
+        <label asp-for="ScopeProductId" class="form-label"></label>
+        <select asp-for="ScopeProductId" class="form-select"
+                asp-items="@(new SelectList(Model.AvailableProducts, nameof(ProductPickerItemDto.Id), nameof(ProductPickerItemDto.Name)))">
+            <option value="">-- Select --</option>
+        </select>
+        <span asp-validation-for="ScopeProductId" class="text-danger small"></span>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-md-6 mb-3">
+        <label asp-for="MinimumOrderAmount" class="form-label"></label>
+        <input asp-for="MinimumOrderAmount" class="form-control" type="number" step="0.01" min="0" />
+    </div>
+    <div class="col-md-6 mb-3">
+        <label asp-for="MaxDiscountAmount" class="form-label"></label>
+        <input asp-for="MaxDiscountAmount" class="form-control" type="number" step="0.01" min="0" />
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-md-6 mb-3">
+        <label asp-for="StartsAtUtc" class="form-label"></label>
+        <input asp-for="StartsAtUtc" class="form-control" />
+        <span asp-validation-for="StartsAtUtc" class="text-danger small"></span>
+    </div>
+    <div class="col-md-6 mb-3">
+        <label asp-for="EndsAtUtc" class="form-label"></label>
+        <input asp-for="EndsAtUtc" class="form-control" />
+        <span asp-validation-for="EndsAtUtc" class="text-danger small"></span>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-md-6 mb-3">
+        <label asp-for="MaxTotalUses" class="form-label"></label>
+        <input asp-for="MaxTotalUses" class="form-control" type="number" min="0" />
+        <div class="form-text">Not yet enforced - recorded for a future milestone once orders exist.</div>
+    </div>
+    <div class="col-md-6 mb-3">
+        <label asp-for="MaxUsesPerCustomer" class="form-label"></label>
+        <input asp-for="MaxUsesPerCustomer" class="form-control" type="number" min="0" />
+        <div class="form-text">Not yet enforced - recorded for a future milestone once orders exist.</div>
+    </div>
+</div>
+
+<div class="mb-3 form-check">
+    <input asp-for="IsActive" class="form-check-input" />
+    <label asp-for="IsActive" class="form-check-label"></label>
+</div>
+
+<button type="submit" class="btn btn-primary">Save</button>
+<a asp-action="Index" class="btn btn-outline-secondary">Cancel</a>
+
+<script>
+    (function () {
+        var select = document.getElementById('ScopeTypeSelect');
+        if (!select) return;
+
+        function updateVisibility() {
+            var scope = select.value;
+            document.querySelectorAll('[data-scope-field]').forEach(function (field) {
+                field.style.display = field.getAttribute('data-scope-field') === scope ? '' : 'none';
+            });
+        }
+
+        select.addEventListener('change', updateVisibility);
+        updateVisibility();
+    })();
+</script>

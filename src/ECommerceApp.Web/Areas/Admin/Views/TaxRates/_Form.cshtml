@@ -1,0 +1,37 @@
+@model TaxRateFormViewModel
+
+<input type="hidden" asp-for="Id" />
+<div asp-validation-summary="ModelOnly"></div>
+
+<div class="row">
+    <div class="col-md-4 mb-3">
+        <label asp-for="CountryCode" class="form-label"></label>
+        <input asp-for="CountryCode" class="form-control text-uppercase" maxlength="2" placeholder="e.g. US, PK" />
+        <span asp-validation-for="CountryCode" class="text-danger small"></span>
+    </div>
+    <div class="col-md-4 mb-3">
+        <label asp-for="RegionCode" class="form-label"></label>
+        <input asp-for="RegionCode" class="form-control" placeholder="Leave blank for a whole-country rate" />
+        <span asp-validation-for="RegionCode" class="text-danger small"></span>
+    </div>
+    <div class="col-md-4 mb-3">
+        <label asp-for="TaxCategory" class="form-label"></label>
+        <input asp-for="TaxCategory" class="form-control" />
+        <div class="form-text">Must match a product's Tax Category exactly (case-insensitive) to apply.</div>
+        <span asp-validation-for="TaxCategory" class="text-danger small"></span>
+    </div>
+</div>
+
+<div class="mb-3">
+    <label asp-for="RatePercent" class="form-label"></label>
+    <input asp-for="RatePercent" class="form-control" type="number" step="0.0001" min="0" max="100" style="max-width:200px" />
+    <span asp-validation-for="RatePercent" class="text-danger small"></span>
+</div>
+
+<div class="mb-3 form-check">
+    <input asp-for="IsActive" class="form-check-input" />
+    <label asp-for="IsActive" class="form-check-label"></label>
+</div>
+
+<button type="submit" class="btn btn-primary">Save</button>
+<a asp-action="Index" class="btn btn-outline-secondary">Cancel</a>

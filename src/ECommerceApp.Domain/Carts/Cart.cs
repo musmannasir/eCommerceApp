@@ -1,4 +1,5 @@
 using ECommerceApp.Domain.Common;
+using ECommerceApp.Domain.Marketing;
 
 namespace ECommerceApp.Domain.Carts;
 
@@ -18,5 +19,15 @@ public class Cart : BaseEntity
     public DateTime CreatedAtUtc { get; set; }
     public DateTime UpdatedAtUtc { get; set; }
 
+    /// <summary>
+    /// The coupon/promotion currently applied to this cart (Milestone 7.1) -
+    /// null if none. Re-validated on every read (CartService.BuildCartDtoAsync),
+    /// not just at apply-time, since cart contents or the promotion itself can
+    /// change afterward; an invalid one is silently cleared rather than left
+    /// to produce a stale discount.
+    /// </summary>
+    public int? AppliedPromotionId { get; set; }
+
     public ICollection<CartItem> Items { get; set; } = new List<CartItem>();
+    public Promotion? AppliedPromotion { get; set; }
 }

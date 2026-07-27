@@ -1,6 +1,6 @@
 # Customer User Guide
 
-## What you can do today (after Milestone 6.3)
+## What you can do today (after Milestone 7.3)
 
 - **Create an account**: go to *Register*, fill in your name/email/password.
   You're signed in immediately afterward. If you had anything in your cart
@@ -112,6 +112,23 @@ have anything in it) to see everything you've added:
   instead, the same way recently-viewed does - and if you already had items
   in your account's cart from a previous visit, anything from your guest
   session is added alongside them rather than replacing them.
+- **Coupon code**: enter one in the box under your cart items and click
+  Apply - if it's valid, you'll see the discount and a new Total
+  (Subtotal minus the discount) right away, plus the promotion's name next
+  to the code. Click **Remove** to take it off. Only one coupon can be
+  applied at a time - applying a new one replaces whichever was there
+  before. If a code doesn't work (wrong code, expired, minimum order not
+  met, or your cart doesn't have anything it applies to), you'll see a
+  message explaining why, and your cart itself isn't changed.
+- **Estimated tax**: if the store has tax set up for its default region,
+  you'll see an "Estimated tax" line under your Total. This is an
+  estimate, not your final tax - it's calculated at checkout once your
+  actual shipping destination is known.
+- **Estimated shipping**: if the store has a shipping method set up, you'll
+  also see an "Estimated shipping" line (or "Free" if your order qualifies
+  for free shipping). Like estimated tax, this is a preview based on the
+  store's typical shipping option - your actual shipping cost and choice
+  of delivery speed are confirmed at checkout.
 - **Checkout** isn't available yet - that arrives in a later milestone.
 
 ### Your Wishlist

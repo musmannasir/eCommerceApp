@@ -1,0 +1,73 @@
+@model ShippingMethodFormViewModel
+
+<input type="hidden" asp-for="Id" />
+<div asp-validation-summary="ModelOnly"></div>
+
+<div class="mb-3">
+    <label asp-for="Name" class="form-label"></label>
+    <input asp-for="Name" class="form-control" placeholder="e.g. Standard Shipping" />
+    <span asp-validation-for="Name" class="text-danger small"></span>
+</div>
+
+<div class="mb-3">
+    <label asp-for="Description" class="form-label"></label>
+    <textarea asp-for="Description" class="form-control" rows="2"></textarea>
+</div>
+
+<div class="row">
+    <div class="col-md-4 mb-3">
+        <label asp-for="CountryCode" class="form-label"></label>
+        <input asp-for="CountryCode" class="form-control text-uppercase" maxlength="2" placeholder="e.g. US, PK" />
+        <span asp-validation-for="CountryCode" class="text-danger small"></span>
+    </div>
+    <div class="col-md-4 mb-3">
+        <label asp-for="RegionCode" class="form-label"></label>
+        <input asp-for="RegionCode" class="form-control" placeholder="Leave blank for a whole-country method" />
+        <span asp-validation-for="RegionCode" class="text-danger small"></span>
+    </div>
+    <div class="col-md-4 mb-3">
+        <label asp-for="DisplayOrder" class="form-label"></label>
+        <input asp-for="DisplayOrder" class="form-control" type="number" />
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-md-4 mb-3">
+        <label asp-for="BaseRate" class="form-label"></label>
+        <input asp-for="BaseRate" class="form-control" type="number" step="0.01" min="0" />
+        <span asp-validation-for="BaseRate" class="text-danger small"></span>
+    </div>
+    <div class="col-md-4 mb-3">
+        <label asp-for="RatePerKg" class="form-label"></label>
+        <input asp-for="RatePerKg" class="form-control" type="number" step="0.01" min="0" />
+        <div class="form-text">Cost = Base rate + (Rate per kg &times; total order weight). A product with no recorded weight contributes 0kg.</div>
+        <span asp-validation-for="RatePerKg" class="text-danger small"></span>
+    </div>
+    <div class="col-md-4 mb-3">
+        <label asp-for="FreeShippingThreshold" class="form-label"></label>
+        <input asp-for="FreeShippingThreshold" class="form-control" type="number" step="0.01" min="0" />
+        <div class="form-text">Shipping is free once the order subtotal meets this amount.</div>
+        <span asp-validation-for="FreeShippingThreshold" class="text-danger small"></span>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-md-4 mb-3">
+        <label asp-for="EstimatedDeliveryDaysMin" class="form-label"></label>
+        <input asp-for="EstimatedDeliveryDaysMin" class="form-control" type="number" min="1" />
+        <span asp-validation-for="EstimatedDeliveryDaysMin" class="text-danger small"></span>
+    </div>
+    <div class="col-md-4 mb-3">
+        <label asp-for="EstimatedDeliveryDaysMax" class="form-label"></label>
+        <input asp-for="EstimatedDeliveryDaysMax" class="form-control" type="number" min="1" />
+        <span asp-validation-for="EstimatedDeliveryDaysMax" class="text-danger small"></span>
+    </div>
+</div>
+
+<div class="mb-3 form-check">
+    <input asp-for="IsActive" class="form-check-input" />
+    <label asp-for="IsActive" class="form-check-label"></label>
+</div>
+
+<button type="submit" class="btn btn-primary">Save</button>
+<a asp-action="Index" class="btn btn-outline-secondary">Cancel</a>

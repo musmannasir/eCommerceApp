@@ -700,6 +700,240 @@ hardens Cart's endpoints against the same class of issue even though Cart
 itself doesn't require authentication. See `Milestone-Status.md`'s
 Milestone 6.3 bugs section for the full account.
 
+## Promotions & coupons (Milestone 7.1)
+
+**Same brief-text gap as Milestones 6.1-6.3** - scope was agreed with the
+user as reasonable conventions implied by the name.
+
+**Automatic vs. code-based, but only code-based is reachable this
+milestone.** `Promotion.CouponCode` is nullable by design - an automatic
+promotion (null code) applies with no customer action, a code-based one
+requires the customer to type it in. `IPromotionService.FindApplicable
+PromotionAsync` is a coupon-code lookup, so it can only ever find a
+code-based promotion; an automatic one is fully admin-creatable (CRUD,
+validation, the works) but nothing in this milestone ever evaluates it
+against a cart. This is a deliberate scope cut, not an oversight: auto-
+applying promotions raises a precedence question - which one wins if
+several automatic promotions could apply to the same cart at once - that
+this milestone's "at most one promotion per cart, no stacking" v1 rule
+doesn't answer on its own, and answering it needs more design than a brief-
+less sub-milestone justifies. Flagged here, not silently shipped.
+
+**`MaxTotalUses`/`MaxUsesPerCustomer` are schema fields only, not
+enforced.** Both are stored and shown in the admin form, but nothing
+decrements or checks them. The reason is structural, not an oversight:
+"enforced" requires counting *completed* uses, and the only signal
+available until `Order` entities exist (Milestone 9) is "a cart currently
+has this promotion applied" - which isn't a completed purchase. Enforcing
+against that signal would let an abandoned cart (customer applies a
+limited-use code, then never checks out) permanently consume one of its
+uses. Revisit once Milestone 9 gives a real "this order was placed"
+event to count against.
+
+**Re-validated on every cart read, not just at apply-time - same pattern
+Cart already uses for unavailable items.** `Cart.AppliedPromotionId` is
+just an FK; `CartService.BuildCartDtoAsync` calls `IPromotionService.
+ValidateAppliedPromotionAsync` on every read and silently clears it (no
+error, no notice - the discount just stops appearing) if the promotion has
+since expired, been deactivated, or its scope no longer matches anything
+in the cart (e.g. the customer removed the one line a category-scoped
+coupon applied to). This mirrors exactly how a soft-deleted product's cart
+line is handled - the state can go stale between requests, so every read
+re-derives truth instead of trusting what was true when it was applied.
+`FindApplicablePromotionAsync` (code lookup, used by `ApplyCouponAsync`)
+and `ValidateAppliedPromotionAsync` (id lookup, used by the read path)
+share one private `Evaluate` method in `PromotionService` so the two paths
+can never drift apart on what "valid" means.
+
+**Scope determines the eligible amount a discount is computed against, not
+the whole cart.** `PromotionScopeType.EntireOrder` discounts the full
+subtotal; `Category`/`Brand`/`Product` only discount the sum of matching
+cart lines (via a lean `PromotionCartLine(ProductId, CategoryId, BrandId,
+LineTotal)` DTO - decoupled from Cart's domain model the same way
+`IPricingService` takes raw scalars instead of entities). If no lines
+match the scope, the promotion is rejected outright ("doesn't qualify"),
+not silently applied with a zero discount. `MinimumOrderAmount`, however,
+is always checked against the full subtotal regardless of scope - a
+minimum-spend threshold is a statement about the whole order, not about
+how much of it happens to be discounted.
+
+**A discount can never exceed what it's discounting.** A `FixedAmount`
+discount is capped to the eligible amount (a $50-off code on a $20
+qualifying line only takes $20 off, never generates a negative total for
+that scope), and a `Percentage` discount is additionally capped by
+`MaxDiscountAmount` when set. Both caps apply in `Evaluate` before the
+discount is ever handed back to the caller.
+
+**Admin CRUD reuses `Policies.CanManageCatalog`**, matching Home Page
+Banners - there's no separate Marketing policy, and `PromotionsController`
+mirrors `HomePageBannersController`'s shape exactly (Index/Create/Edit/
+Deactivate/Activate/Delete/Restore, soft delete + recycle bin). The scope
+picker's Category/Brand/Product dropdowns reuse `ICategoryService.
+GetAllActiveAsync`/`IBrandService.GetAllActiveAsync`/`IProductService.
+GetPickerListAsync` - the same lean lookups `ProductsController` already
+uses for its own Category/Brand dropdowns.
+
+## Tax service (Milestone 7.2)
+
+**Same brief-text gap as Milestones 6.1-7.1** - scope was agreed with the
+user as reasonable conventions implied by the name.
+
+**`TaxRate` models a jurisdiction + category, not a real customer
+destination.** `(CountryCode, RegionCode?, TaxCategory)` maps to a
+percentage; `RegionCode` null means the rate applies to the whole country,
+and a region-specific rate for the same country/category takes precedence
+over the country-wide one when both exist. Two filtered unique indexes
+enforce this - a plain composite unique index would let the same
+`CountryCode`+`TaxCategory` combination repeat indefinitely with
+`RegionCode` left `NULL` each time, since SQL Server treats every row's
+`NULL` as distinct from every other; this is the exact same problem, and
+the exact same fix, Cart's `UserId`/`GuestToken` pair already solved.
+
+**`TaxCategory` matches `Product.TaxCategory` by plain string equality
+(case-insensitive), not a shared FK or enum.** Both fields stay free-text,
+per the Data-Dictionary's pre-existing note (written back in Milestone 2)
+that a structured tax-category model doesn't exist yet. This is a
+deliberate, documented coupling-by-convention: a typo in either an admin's
+Tax Rate category or a product's Tax Category silently produces no match
+(zero tax, not an error) rather than a validation failure, since there's
+no foreign key to enforce agreement between them. Worth tightening later
+(e.g. a shared enum or a picker sourced from distinct in-use categories)
+but out of scope for this sub-milestone.
+
+**No real destination exists to calculate against - `Address` doesn't
+arrive until Milestone 8.1.** This shapes the whole milestone's scope: the
+Checkout Calculation Service (Milestone 7.4) is what will eventually
+combine Tax + Shipping + Promotion into a final, destination-accurate
+order total once a real shipping address exists. Until then, `ITaxService`
+splits into two methods with two different audiences:
+- `CalculateTaxAsync(amount, category, countryCode, regionCode)` is
+  destination-agnostic and takes an explicit jurisdiction - ready for
+  Milestone 8's real checkout to call with an actual address, unchanged.
+- `CalculateEstimatedTaxAsync(lines)` is a convenience wrapper that reads
+  the store's configured default jurisdiction (`Store:DefaultTaxCountryCode`/
+  `Store:DefaultTaxRegionCode`, the same "config-driven store default"
+  convention `PricingService`'s `Store:PricesIncludeTax` flag already
+  uses) and is the only method actually wired up this milestone - it
+  powers the Cart page's "Estimated tax" line. Both methods live on the
+  same `ITaxService`/`TaxService` rather than splitting into two
+  interfaces, since the estimate is just the general method looped with a
+  fixed jurisdiction, not a fundamentally different calculation.
+
+**The estimate is computed on pre-discount line totals, not what
+`Total` (Subtotal minus PromotionDiscount) already discounts.** Allocating
+a cart-level Promotion discount across lines for tax purposes - some
+jurisdictions tax the discounted price, some don't, and a
+category/brand/product-scoped promotion only discounts *some* lines -
+is real complexity that belongs to the Checkout Calculation Service
+(Milestone 7.4), which will have a complete, final order to reason about,
+not an estimate. `CartDto.EstimatedTax` is clearly a preview, and the
+existing "Tax and shipping calculated at checkout" note stays untouched
+precisely because of this.
+
+**`EstimatedTaxRateConfigured` distinguishes "nothing configured yet" from
+a genuine 0% rate** - `CartService` doesn't show the estimated-tax line at
+all when it's `false`, so an admin who hasn't set up any tax rates doesn't
+accidentally communicate "this store charges no tax" to customers. It's
+`true` if *any* line's category had a configured rate, even if others
+didn't - a partial estimate is still more honest than none. A non-taxable
+product (`Product.IsTaxable = false`) is simply excluded from the lines
+passed to `CalculateEstimatedTaxAsync` in the first place, mirroring how
+`CartService` already excludes unavailable lines from `Subtotal`.
+
+**Admin CRUD reuses `Policies.CanManageCatalog`** - there's no dedicated
+Checkout/Finance policy, and `TaxRatesController` mirrors
+`PromotionsController`'s shape exactly (Index/Create/Edit/Deactivate/
+Activate/Delete/Restore, soft delete + recycle bin). Its nav entry
+introduces a new "Checkout" sidebar section (previously Tax Rates would
+have had no natural home among Catalog/Inventory/Marketing) - a
+deliberately forward-looking structural choice, since Milestone 7.3's
+Shipping Rates admin UI will have an obvious place to land next to it.
+
+## Shipping (Milestone 7.3)
+
+**Same brief-text gap as Milestones 6.1-7.2** - scope was agreed with the
+user as reasonable conventions implied by the name.
+
+**A weight-based cost model, using a field that's sat unused since
+Milestone 2.4.** `Product.Weight`/`Length`/`Width`/`Height` were added
+during the catalog milestone for exactly this kind of downstream use, but
+nothing consumed them until now. Cost is `BaseRate + RatePerKg *
+totalOrderWeight`, where the order's total weight sums `Product.Weight *
+Quantity` across the cart's available lines - a genuinely useful
+calculation, not just a copy of Tax's flat-lookup shape, and one that puts
+the dimension fields to their first real use. A line whose product has no
+recorded weight contributes 0kg rather than blocking the estimate - the
+same leniency `CartService.GetStockAsync` already applies to untracked
+inventory (treat the missing signal as the permissive default, not a hard
+stop).
+
+**Several named methods can coexist per jurisdiction - `ShippingMethod`'s
+uniqueness constraint reflects that, unlike `TaxRate`'s.** A store might
+offer both "Standard" and "Express" shipping to the same country; TaxRate
+never needed this (only one rate can sensibly apply to a given category in
+a given jurisdiction). So `ShippingMethod`'s two filtered unique indexes
+key on `(CountryCode, Name)` / `(CountryCode, RegionCode, Name)` - Name
+must be unique *within* a jurisdiction, but the jurisdiction itself isn't
+exclusive to one method the way a TaxRate row is. `GetAvailableShipping
+OptionsAsync` reflects this directly: it returns every active method
+matching the destination (both a whole-country method and a region-specific
+one, if both exist - they're different named services, not competing
+rates for the same thing), not a single winner.
+
+**Same "estimate only" scope boundary as Tax, for the same reason -
+no real destination exists until Milestone 8.1, and no method-picker UI
+exists until Milestone 8.2.** `IShippingService` splits the same way
+`ITaxService` did:
+- `GetAvailableShippingOptionsAsync(weight, subtotal, countryCode,
+  regionCode)` is destination-explicit and returns every option with its
+  computed cost - ready for Milestone 8.2's checkout method picker to call
+  with a real address, unchanged.
+- `CalculateEstimatedShippingAsync(weight, subtotal)` reads the store's
+  configured default jurisdiction (`Store:DefaultShippingCountryCode`/
+  `Store:DefaultShippingRegionCode` - independent config keys from Tax's,
+  since a store's assumed shipping origin/coverage and its assumed tax
+  jurisdiction aren't necessarily the same policy decision even though
+  both currently default to the same value) and returns the *cheapest*
+  option - the only sensible single-number summary before any method
+  picker exists to let the customer choose. This is the only consumer
+  wired up this milestone, powering the Cart page's "Estimated shipping"
+  line.
+
+**The free-shipping threshold is checked against the pre-discount
+subtotal, mirroring Tax's simplification exactly and for the same
+reason** - a real post-discount check requires knowing how a cart-level
+Promotion discount allocates across lines, which is the Checkout
+Calculation Service's job (Milestone 7.4), not this estimate's.
+`EstimatedShippingRateConfigured` distinguishes "no method configured for
+this jurisdiction at all" from a genuine free/zero-cost method, the same
+reasoning as `EstimatedTaxRateConfigured` - the Cart page hides the line
+entirely rather than showing a possibly-misleading "Free" when nobody's
+configured shipping yet.
+
+**A real bug this milestone's own tests caught**: `TestDatabase.ResetAsync`
+(the integration test suite's shared, real-SQL-Server test database reset,
+run once per collection) had never been updated to clear `Promotions`,
+`TaxRates`, or `ShippingMethods` when those tables were introduced across
+Milestones 7.1-7.3 - exactly the "add a new table to this script the same
+milestone it's introduced" reminder already on file from Milestone 6.3's
+report, missed three times in a row. A `ShippingMethod` integration test
+saw a method left over from an earlier test run and failed on a rerun (not
+the same run it was created in) - `TaxRate`/`Promotion` tests happened to
+dodge the same class of collision because each test could pick a unique
+`TaxCategory`/coupon code, an extra dimension `ShippingMethod`'s
+`(CountryCode, RegionCode)` lookup key doesn't have. Fixed by adding all
+three tables' cleanup (and identity reseeds) to the script; a planned "no
+shipping method configured" integration test for the app's one real
+default jurisdiction was dropped rather than chased further, since there's
+no per-test-randomizable dimension available to isolate it and the
+underlying "no rate configured" logic is already fully covered by
+`ShippingServiceTests`/`CartServiceTests` against a fresh InMemory database
+per test.
+
+**Admin CRUD reuses `Policies.CanManageCatalog`** and sits in the
+"Checkout" nav section (introduced in Milestone 7.2) next to Tax Rates -
+`ShippingMethodsController` mirrors `TaxRatesController`'s shape exactly.
+
 ## Framework version note
 
 The brief fixes the stack at **.NET 8**. This machine has only the **.NET 10**

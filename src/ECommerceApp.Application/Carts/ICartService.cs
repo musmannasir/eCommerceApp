@@ -32,4 +32,14 @@ public interface ICartService
     /// there's no guest cart to merge.
     /// </summary>
     Task<CartDto> MergeGuestCartIntoUserCartAsync(string guestToken, string userId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Validates the coupon against the cart's current contents (via
+    /// IPromotionService) and, on success, sets it as the cart's one applied
+    /// promotion - Milestone 7.1's v1 rule is at most one at a time, so this
+    /// replaces whatever was applied before rather than stacking.
+    /// </summary>
+    Task<Result<CartDto>> ApplyCouponAsync(CartOwner owner, string couponCode, CancellationToken cancellationToken = default);
+
+    Task<CartDto> RemoveCouponAsync(CartOwner owner, CancellationToken cancellationToken = default);
 }

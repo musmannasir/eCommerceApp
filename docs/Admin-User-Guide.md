@@ -93,8 +93,87 @@
   appear as the home page's top carousel; Promo banners appear as a smaller
   grid further down the page.
 
+- **Promotions** (`/Admin/Promotions`): searchable/paginated list,
+  create/edit, deactivate/activate, delete (soft, with a recycle bin to
+  restore). Each promotion has:
+  - A **coupon code** (optional) - leave it blank for an automatic
+    promotion; note that automatic promotions aren't applied to any cart
+    yet (see the scope note below), so in practice every promotion you
+    create today should have a code.
+  - A **discount type** (Percentage or Fixed amount) and value.
+  - A **scope** - Entire order, or a specific Category/Brand/Product (the
+    form only shows the picker for whichever scope you choose). A
+    category/brand/product-scoped promotion only discounts the matching
+    items in the cart, not the whole order.
+  - Optional **minimum order amount** (checked against the cart's full
+    subtotal) and **maximum discount amount** (caps a percentage
+    discount's currency value).
+  - A **start date** (required) and optional **end date**.
+  - Optional **max total uses** / **max uses per customer** - these are
+    recorded but not yet enforced (the form says so); enforcing them needs
+    order history, which doesn't exist until Milestone 9.
+  - **Active/Inactive** - an inactive promotion's code stops working
+    immediately, even mid-window.
+
+  On the storefront, a customer applies a coupon code on the Cart page;
+  only one promotion can be applied to a cart at a time (applying a new
+  one replaces the last). If a promotion becomes invalid after being
+  applied - you deactivate it, its window ends, or the customer removes
+  the item it was scoped to - it's silently dropped from the cart the next
+  time the customer looks at it, no error shown.
+
+### Checkout (`SuperAdmin`/`Admin`/`CatalogManager`)
+
+- **Tax rates** (`/Admin/TaxRates`): searchable/paginated list, create/edit,
+  deactivate/activate, delete (soft, with a recycle bin to restore). Each
+  rate has:
+  - A **country code** (2-letter ISO, e.g. `US`, `PK`).
+  - An optional **region code** - leave it blank for a whole-country rate;
+    fill it in (e.g. a US state) for a rate that only applies there. If
+    both a whole-country rate and a region-specific rate exist for the
+    same country and category, the region-specific one wins for that
+    region.
+  - A **tax category** - must match a product's Tax Category field exactly
+    (case-insensitive) to apply; there's no dropdown tying the two
+    together, so a typo in either place means the rate silently won't
+    match anything.
+  - A **rate percentage** (0-100).
+  - **Active/Inactive** - an inactive rate stops applying immediately.
+
+  These rates power the **Estimated tax** line on the customer-facing Cart
+  page, calculated against the store's configured default jurisdiction
+  (`Store:DefaultTaxCountryCode`/`Store:DefaultTaxRegionCode` in
+  configuration) - not the customer's real shipping address, since there's
+  no Address entity yet (that arrives in Milestone 8.1). The line only
+  appears once at least one rate is configured; until then, nothing is
+  shown rather than a misleading $0.00. Real, destination-based tax
+  calculation at checkout arrives with Milestones 7.4/8.
+
+- **Shipping methods** (`/Admin/ShippingMethods`): searchable/paginated
+  list, create/edit, deactivate/activate, delete (soft, with a recycle bin
+  to restore). Unlike tax rates, more than one named method can exist for
+  the same country/region (e.g. both "Standard" and "Express"). Each
+  method has:
+  - A **country code** and optional **region code**, same rules as tax
+    rates.
+  - A **base rate** and a **rate per kg** - the cost is the base rate plus
+    the rate per kg multiplied by the order's total weight (a product with
+    no weight recorded contributes 0kg).
+  - An optional **free shipping threshold** - the method's cost becomes 0
+    once the order subtotal meets this amount.
+  - An optional **estimated delivery day range**.
+  - **Active/Inactive**.
+
+  The *cheapest* active method for the store's configured default
+  jurisdiction (`Store:DefaultShippingCountryCode`/
+  `Store:DefaultShippingRegionCode`) powers the **Estimated shipping** line
+  on the customer-facing Cart page - same estimate-only reasoning as tax
+  rates (no real address yet, and no way to let the customer pick a method
+  until checkout exists). The line only appears once at least one method
+  is configured. Real, destination-based shipping calculation and method
+  selection arrive with Milestones 7.4/8.
+
 Orders, Customers, Reports, and Settings sections are still placeholders -
-they activate in their respective milestones. Promotions and coupons
-(Milestone 7) will join Marketing alongside home page banners.
+they activate in their respective milestones.
 
 This guide grows section-by-section as each admin capability is built.

@@ -1,0 +1,32 @@
+@model PagedResult<TaxRateDto>
+@{
+    ViewData["Title"] = "Deleted tax rates";
+}
+
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h1 class="h3 mb-0">Recycle bin - Tax rates</h1>
+    <a asp-action="Index" class="btn btn-outline-secondary">Back to tax rates</a>
+</div>
+
+<table class="table table-hover align-middle">
+    <thead><tr><th>Country</th><th>Region</th><th>Category</th><th></th></tr></thead>
+    <tbody>
+        @foreach (var rate in Model.Items)
+        {
+            <tr>
+                <td>@rate.CountryCode</td>
+                <td class="text-muted small">@(rate.RegionCode ?? "Whole country")</td>
+                <td class="text-muted small">@rate.TaxCategory</td>
+                <td class="text-end">
+                    <form asp-action="Restore" asp-route-id="@rate.Id" method="post" class="d-inline">
+                        <button type="submit" class="btn btn-sm btn-outline-success">Restore</button>
+                    </form>
+                </td>
+            </tr>
+        }
+        @if (Model.Items.Count == 0)
+        {
+            <tr><td colspan="4" class="text-center text-muted py-4">Nothing here.</td></tr>
+        }
+    </tbody>
+</table>

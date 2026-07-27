@@ -1,5 +1,8 @@
 using ECommerceApp.Application.Carts.Models;
+using ECommerceApp.Application.Marketing.Models;
+using ECommerceApp.Application.Shipping.Models;
 using ECommerceApp.Application.Storefront.Models;
+using ECommerceApp.Application.Taxation.Models;
 using ECommerceApp.Domain.Catalog;
 using ECommerceApp.Domain.Common;
 using ECommerceApp.Domain.Inventory;
@@ -411,6 +414,200 @@ public class CartServiceTests : IDisposable
         cart.Items[0].AvailableQuantity.Should().Be(3);
     }
 
+    [Fact]
+    public async Task Applying_a_valid_coupon_sets_the_discount_and_total()
+    {
+        var product = await SeedProductAsync(price: 100m);
+        var owner = GuestOwner();
+        await _harness.CartService.AddItemAsync(owner, new AddCartItemRequest(product.Id, null, 1));
+        await SeedPromotionAsync("SAVE10", 10m);
+
+        var result = await _harness.CartService.ApplyCouponAsync(owner, "SAVE10");
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.AppliedCouponCode.Should().Be("SAVE10");
+        result.Value.PromotionDiscount.Should().Be(10m);
+        result.Value.Total.Should().Be(90m);
+    }
+
+    [Fact]
+    public async Task Applying_an_unknown_coupon_code_fails_without_changing_the_cart()
+    {
+        var product = await SeedProductAsync(price: 100m);
+        var owner = GuestOwner();
+        await _harness.CartService.AddItemAsync(owner, new AddCartItemRequest(product.Id, null, 1));
+
+        var result = await _harness.CartService.ApplyCouponAsync(owner, "NOPE");
+
+        result.IsFailure.Should().BeTrue();
+        var cart = await _harness.CartService.GetCartAsync(owner);
+        cart.AppliedCouponCode.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task Applying_a_coupon_to_an_empty_cart_is_rejected()
+    {
+        await SeedPromotionAsync("SAVE10", 10m);
+
+        var result = await _harness.CartService.ApplyCouponAsync(GuestOwner(), "SAVE10");
+
+        result.IsFailure.Should().BeTrue();
+        result.FirstError.Type.Should().Be(ErrorType.Validation);
+    }
+
+    [Fact]
+    public async Task Removing_a_coupon_clears_the_discount()
+    {
+        var product = await SeedProductAsync(price: 100m);
+        var owner = GuestOwner();
+        await _harness.CartService.AddItemAsync(owner, new AddCartItemRequest(product.Id, null, 1));
+        await SeedPromotionAsync("SAVE10", 10m);
+        await _harness.CartService.ApplyCouponAsync(owner, "SAVE10");
+
+        var cart = await _harness.CartService.RemoveCouponAsync(owner);
+
+        cart.AppliedCouponCode.Should().BeNull();
+        cart.PromotionDiscount.Should().Be(0);
+        cart.Total.Should().Be(cart.Subtotal);
+    }
+
+    [Fact]
+    public async Task A_promotion_deactivated_after_being_applied_is_silently_cleared_on_the_next_read()
+    {
+        var product = await SeedProductAsync(price: 100m);
+        var owner = GuestOwner();
+        await _harness.CartService.AddItemAsync(owner, new AddCartItemRequest(product.Id, null, 1));
+        var promotion = await SeedPromotionAsync("SAVE10", 10m);
+        await _harness.CartService.ApplyCouponAsync(owner, "SAVE10");
+
+        await _harness.PromotionService.DeactivateAsync(promotion.Id);
+        var cart = await _harness.CartService.GetCartAsync(owner);
+
+        cart.AppliedCouponCode.Should().BeNull();
+        cart.PromotionDiscount.Should().Be(0);
+        cart.Total.Should().Be(cart.Subtotal);
+    }
+
+    [Fact]
+    public async Task A_taxable_item_shows_estimated_tax_when_a_rate_is_configured_for_the_store_default_jurisdiction()
+    {
+        // The harness configures Store:DefaultTaxCountryCode=US, Store:DefaultTaxRegionCode=CA.
+        var product = await SeedProductAsync(price: 100m);
+        await _harness.TaxService.CreateAsync(new CreateTaxRateRequest("US", "CA", "Standard", 10m, true));
+        var owner = GuestOwner();
+
+        var result = await _harness.CartService.AddItemAsync(owner, new AddCartItemRequest(product.Id, null, 1));
+
+        result.Value.EstimatedTaxRateConfigured.Should().BeTrue();
+        result.Value.EstimatedTax.Should().Be(10m);
+    }
+
+    [Fact]
+    public async Task A_non_taxable_item_is_excluded_from_the_tax_estimate()
+    {
+        var product = await SeedProductAsync(price: 100m, isTaxable: false);
+        await _harness.TaxService.CreateAsync(new CreateTaxRateRequest("US", "CA", "Standard", 10m, true));
+        var owner = GuestOwner();
+
+        var result = await _harness.CartService.AddItemAsync(owner, new AddCartItemRequest(product.Id, null, 1));
+
+        result.Value.EstimatedTaxRateConfigured.Should().BeFalse();
+        result.Value.EstimatedTax.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task Estimated_tax_is_zero_and_unconfigured_when_no_rate_exists_for_the_store_default_jurisdiction()
+    {
+        var product = await SeedProductAsync(price: 100m);
+        var owner = GuestOwner();
+
+        var result = await _harness.CartService.AddItemAsync(owner, new AddCartItemRequest(product.Id, null, 1));
+
+        result.Value.EstimatedTaxRateConfigured.Should().BeFalse();
+        result.Value.EstimatedTax.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task Estimated_tax_sums_across_lines_with_different_tax_categories()
+    {
+        var standard = await SeedProductAsync(name: "Standard item", price: 100m, taxCategory: "Standard");
+        var reduced = await SeedProductAsync(name: "Reduced item", price: 50m, taxCategory: "Reduced");
+        await _harness.TaxService.CreateAsync(new CreateTaxRateRequest("US", "CA", "Standard", 10m, true));
+        await _harness.TaxService.CreateAsync(new CreateTaxRateRequest("US", "CA", "Reduced", 5m, true));
+        var owner = GuestOwner();
+        await _harness.CartService.AddItemAsync(owner, new AddCartItemRequest(standard.Id, null, 1));
+
+        var result = await _harness.CartService.AddItemAsync(owner, new AddCartItemRequest(reduced.Id, null, 1));
+
+        result.Value.EstimatedTaxRateConfigured.Should().BeTrue();
+        result.Value.EstimatedTax.Should().Be(12.5m); // 10 + 2.5
+    }
+
+    [Fact]
+    public async Task A_cart_shows_estimated_shipping_when_a_method_is_configured_for_the_store_default_jurisdiction()
+    {
+        // The harness configures Store:DefaultShippingCountryCode=US, Store:DefaultShippingRegionCode=CA.
+        var product = await SeedProductAsync(price: 50m, weight: 2m);
+        await _harness.ShippingService.CreateAsync(new CreateShippingMethodRequest(
+            "Standard", null, "US", "CA", 5m, 1m, null, null, null, 0, true));
+        var owner = GuestOwner();
+
+        var result = await _harness.CartService.AddItemAsync(owner, new AddCartItemRequest(product.Id, null, 1));
+
+        result.Value.EstimatedShippingRateConfigured.Should().BeTrue();
+        result.Value.EstimatedShipping.Should().Be(7m); // 5 + 1*2
+    }
+
+    [Fact]
+    public async Task A_product_with_no_recorded_weight_contributes_zero_to_the_shipping_estimate()
+    {
+        var product = await SeedProductAsync(price: 50m, weight: null);
+        await _harness.ShippingService.CreateAsync(new CreateShippingMethodRequest(
+            "Standard", null, "US", "CA", 5m, 1m, null, null, null, 0, true));
+        var owner = GuestOwner();
+
+        var result = await _harness.CartService.AddItemAsync(owner, new AddCartItemRequest(product.Id, null, 1));
+
+        result.Value.EstimatedShippingRateConfigured.Should().BeTrue();
+        result.Value.EstimatedShipping.Should().Be(5m); // 5 + 1*0
+    }
+
+    [Fact]
+    public async Task Estimated_shipping_is_zero_and_unconfigured_when_no_method_exists_for_the_store_default_jurisdiction()
+    {
+        var product = await SeedProductAsync(price: 50m, weight: 2m);
+        var owner = GuestOwner();
+
+        var result = await _harness.CartService.AddItemAsync(owner, new AddCartItemRequest(product.Id, null, 1));
+
+        result.Value.EstimatedShippingRateConfigured.Should().BeFalse();
+        result.Value.EstimatedShipping.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task Estimated_shipping_sums_weight_across_multiple_lines()
+    {
+        var heavy = await SeedProductAsync(name: "Heavy item", price: 50m, weight: 3m);
+        var light = await SeedProductAsync(name: "Light item", price: 20m, weight: 1m);
+        await _harness.ShippingService.CreateAsync(new CreateShippingMethodRequest(
+            "Standard", null, "US", "CA", 5m, 2m, null, null, null, 0, true));
+        var owner = GuestOwner();
+        await _harness.CartService.AddItemAsync(owner, new AddCartItemRequest(heavy.Id, null, 1));
+
+        var result = await _harness.CartService.AddItemAsync(owner, new AddCartItemRequest(light.Id, null, 1));
+
+        result.Value.EstimatedShippingRateConfigured.Should().BeTrue();
+        result.Value.EstimatedShipping.Should().Be(13m); // 5 + 2*(3+1)
+    }
+
+    private async Task<PromotionDto> SeedPromotionAsync(string couponCode, decimal percentageDiscount)
+    {
+        var result = await _harness.PromotionService.CreateAsync(new CreatePromotionRequest(
+            "Test promotion", null, couponCode, "Percentage", percentageDiscount, "EntireOrder",
+            null, null, null, null, null, DateTime.UtcNow.AddDays(-1), null, null, null, true));
+        return result.Value;
+    }
+
     private static CartOwner GuestOwner() => CartOwner.ForGuest(Guid.NewGuid().ToString("N"));
 
     private async Task<Category> SeedCategoryAsync()
@@ -422,7 +619,8 @@ public class CartServiceTests : IDisposable
     }
 
     private async Task<Product> SeedProductAsync(
-        bool isActive = true, bool isPublished = true, string name = "Widget", decimal price = 10m)
+        bool isActive = true, bool isPublished = true, string name = "Widget", decimal price = 10m,
+        string taxCategory = "Standard", bool isTaxable = true, decimal? weight = null)
     {
         var category = await SeedCategoryAsync();
         var product = new Product
@@ -436,6 +634,9 @@ public class CartServiceTests : IDisposable
             IsActive = isActive,
             IsPublished = isPublished,
             PublishedAtUtc = DateTime.UtcNow,
+            TaxCategory = taxCategory,
+            IsTaxable = isTaxable,
+            Weight = weight,
         };
         _harness.DbContext.Products.Add(product);
         await _harness.DbContext.SaveChangesAsync();

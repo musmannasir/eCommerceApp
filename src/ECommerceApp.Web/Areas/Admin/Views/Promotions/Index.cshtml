@@ -1,0 +1,127 @@
+@using ECommerceApp.Application.Marketing.Models
+@model PagedResult<PromotionDto>
+@{
+    ViewData["Title"] = "Promotions";
+    var search = ViewData["Search"] as string;
+}
+
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h1 class="h3 mb-0">Promotions</h1>
+    <div class="d-flex gap-2">
+        <a asp-action="Deleted" class="btn btn-outline-secondary">Recycle bin</a>
+        <a asp-action="Create" class="btn btn-primary">New promotion</a>
+    </div>
+</div>
+
+@if (TempData["Message"] is string message)
+{
+    <div class="alert alert-success">@message</div>
+}
+@if (TempData["Error"] is string error)
+{
+    <div class="alert alert-danger">@error</div>
+}
+
+<form method="get" class="row g-2 mb-3">
+    <div class="col-auto">
+        <input type="search" name="search" value="@search" class="form-control" placeholder="Search name or coupon code" />
+    </div>
+    <div class="col-auto">
+        <button type="submit" class="btn btn-outline-primary">Search</button>
+    </div>
+</form>
+
+<table class="table table-hover align-middle">
+    <thead>
+        <tr><th>Name</th><th>Coupon code</th><th>Discount</th><th>Scope</th><th>Window</th><th>Status</th><th></th></tr>
+    </thead>
+    <tbody>
+        @foreach (var promotion in Model.Items)
+        {
+            <tr>
+                <td>@promotion.Name</td>
+                <td>
+                    @if (!string.IsNullOrEmpty(promotion.CouponCode))
+                    {
+                        <code>@promotion.CouponCode</code>
+                    }
+                    else
+                    {
+                        <span class="text-muted small">Automatic</span>
+                    }
+                </td>
+                <td>
+                    @(promotion.DiscountType == "Percentage" ? $"{promotion.DiscountValue}%" : $"{promotion.DiscountValue:C}")
+                </td>
+                <td>
+                    @switch (promotion.ScopeType)
+                    {
+                        case "Category":
+                            @:Category: @promotion.ScopeCategoryName
+                            break;
+                        case "Brand":
+                            @:Brand: @promotion.ScopeBrandName
+                            break;
+                        case "Product":
+                            @:Product: @promotion.ScopeProductName
+                            break;
+                        default:
+                            @:Entire order
+                            break;
+                    }
+                </td>
+                <td class="small text-muted">
+                    @promotion.StartsAtUtc.ToString("d")
+                    @(promotion.EndsAtUtc.HasValue ? $" - {promotion.EndsAtUtc.Value:d}" : " - no end")
+                </td>
+                <td>
+                    @if (promotion.IsActive)
+                    {
+                        <span class="badge text-bg-success">Active</span>
+                    }
+                    else
+                    {
+                        <span class="badge text-bg-secondary">Inactive</span>
+                    }
+                </td>
+                <td class="text-end">
+                    <a asp-action="Edit" asp-route-id="@promotion.Id" class="btn btn-sm btn-outline-secondary">Edit</a>
+                    @if (promotion.IsActive)
+                    {
+                        <form asp-action="Deactivate" asp-route-id="@promotion.Id" method="post" class="d-inline">
+                            <button type="submit" class="btn btn-sm btn-outline-warning">Deactivate</button>
+                        </form>
+                    }
+                    else
+                    {
+                        <form asp-action="Activate" asp-route-id="@promotion.Id" method="post" class="d-inline">
+                            <button type="submit" class="btn btn-sm btn-outline-success">Activate</button>
+                        </form>
+                    }
+                    <form asp-action="Delete" asp-route-id="@promotion.Id" method="post" class="d-inline"
+                          onsubmit="return confirm('Delete this promotion?');">
+                        <button type="submit" class="btn btn-sm btn-outline-danger">Delete</button>
+                    </form>
+                </td>
+            </tr>
+        }
+        @if (Model.Items.Count == 0)
+        {
+            <tr><td colspan="7" class="text-center text-muted py-4">No promotions found.</td></tr>
+        }
+    </tbody>
+</table>
+
+@if (Model.TotalPages > 1)
+{
+    <nav>
+        <ul class="pagination">
+            @for (var i = 1; i <= Model.TotalPages; i++)
+            {
+                <li class="page-item @(i == Model.Page ? "active" : "")">
+                    <a class="page-link" asp-action="Index" asp-route-page="@i" asp-route-search="@search">@i</a>
+                </li>
+            }
+        </ul>
+    </nav>
+}

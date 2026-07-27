@@ -2,7 +2,9 @@ using ECommerceApp.Infrastructure.Carts;
 using ECommerceApp.Infrastructure.Catalog;
 using ECommerceApp.Infrastructure.Marketing;
 using ECommerceApp.Infrastructure.Pricing;
+using ECommerceApp.Infrastructure.Shipping;
 using ECommerceApp.Infrastructure.Storefront;
+using ECommerceApp.Infrastructure.Taxation;
 using ECommerceApp.Infrastructure.Tests.TestSupport;
 using ECommerceApp.Infrastructure.Wishlist;
 using Microsoft.EntityFrameworkCore;
@@ -29,6 +31,9 @@ public sealed class CatalogTestHarness : IDisposable
     public ProductDetailService ProductDetailService { get; }
     public CartService CartService { get; }
     public WishlistService WishlistService { get; }
+    public PromotionService PromotionService { get; }
+    public TaxService TaxService { get; }
+    public ShippingService ShippingService { get; }
 
     public CatalogTestHarness()
     {
@@ -39,6 +44,16 @@ public sealed class CatalogTestHarness : IDisposable
         Clock = new FakeClock();
         FileStorage = new FakeFileStorage();
         DbContext = new TestDbContext(options, new FakeCurrentUserService(), Clock);
+
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["Store:DefaultTaxCountryCode"] = "US",
+                ["Store:DefaultTaxRegionCode"] = "CA",
+                ["Store:DefaultShippingCountryCode"] = "US",
+                ["Store:DefaultShippingRegionCode"] = "CA",
+            })
+            .Build();
 
         CategoryService = new CategoryService(DbContext);
         BrandService = new BrandService(DbContext);
@@ -52,7 +67,10 @@ public sealed class CatalogTestHarness : IDisposable
         RecommendationService = new RecommendationService(DbContext);
         WishlistService = new WishlistService(DbContext, Clock);
         ProductDetailService = new ProductDetailService(DbContext, PricingService, RecommendationService, RecentlyViewedService, WishlistService);
-        CartService = new CartService(DbContext, PricingService, Clock);
+        PromotionService = new PromotionService(DbContext);
+        TaxService = new TaxService(DbContext, configuration);
+        ShippingService = new ShippingService(DbContext, configuration);
+        CartService = new CartService(DbContext, PricingService, PromotionService, TaxService, ShippingService, Clock);
     }
 
     public void Dispose() => DbContext.Dispose();

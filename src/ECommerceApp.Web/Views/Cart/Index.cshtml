@@ -103,8 +103,45 @@ else
 
     <div class="d-flex justify-content-between align-items-start mt-4">
         <button type="button" class="btn btn-outline-secondary" id="cartClearButton">Clear cart</button>
-        <div class="text-end">
-            <div class="fs-5">Subtotal: <strong>@Model.Subtotal.ToString("0.00")</strong></div>
+        <div class="text-end" style="min-width:280px">
+            <div class="mb-3 text-start">
+                @if (!string.IsNullOrEmpty(Model.AppliedCouponCode))
+                {
+                    <div class="d-flex justify-content-between align-items-center">
+                        <span>
+                            Coupon <code>@Model.AppliedCouponCode</code> applied
+                            @if (!string.IsNullOrEmpty(Model.AppliedPromotionName))
+                            {
+                                <span class="text-muted small">(@Model.AppliedPromotionName)</span>
+                            }
+                        </span>
+                        <button type="button" class="btn btn-sm btn-outline-secondary" id="cartRemoveCouponButton">Remove</button>
+                    </div>
+                }
+                else
+                {
+                    <div class="input-group input-group-sm">
+                        <input type="text" class="form-control" id="cartCouponInput" placeholder="Coupon code" />
+                        <button type="button" class="btn btn-outline-primary" id="cartApplyCouponButton">Apply</button>
+                    </div>
+                }
+            </div>
+            <div>Subtotal: <strong>@Model.Subtotal.ToString("0.00")</strong></div>
+            @if (Model.PromotionDiscount > 0)
+            {
+                <div class="text-success">Discount: -@Model.PromotionDiscount.ToString("0.00")</div>
+            }
+            <div class="fs-5">Total: <strong>@Model.Total.ToString("0.00")</strong></div>
+            @if (Model.EstimatedTaxRateConfigured)
+            {
+                <div class="text-muted small">Estimated tax: @Model.EstimatedTax.ToString("0.00")</div>
+            }
+            @if (Model.EstimatedShippingRateConfigured)
+            {
+                <div class="text-muted small">
+                    Estimated shipping: @(Model.EstimatedShipping == 0 ? "Free" : Model.EstimatedShipping.ToString("0.00"))
+                </div>
+            }
             <p class="text-muted small">Tax and shipping calculated at checkout.</p>
             <button type="button" class="btn btn-primary" disabled title="Checkout arrives in a later milestone">Checkout</button>
         </div>
