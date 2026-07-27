@@ -1,0 +1,10 @@
+@model TaxRateFormViewModel
+@{
+    ViewData["Title"] = "New tax rate";
+}
+
+<h1 class="h3 mb-4">New tax rate</h1>
+
+<form asp-action="Create" method="post">
+    @await Html.PartialAsync("_Form", Model)
+</form>

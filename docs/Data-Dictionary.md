@@ -455,6 +455,7 @@ and flag* that the price changed, never to charge it.
 | GuestToken | nvarchar(64) | Yes | Set for a guest's cart (from the `CartGuestToken` cookie); unique when present |
 | CreatedAtUtc | datetime2 | No | |
 | UpdatedAtUtc | datetime2 | No | Bumped on every add/update/remove/clear |
+| AppliedPromotionId | int (FK -> Promotions) | Yes | Restrict. Milestone 7.1 - the cart's one currently-applied coupon, re-validated (not just re-read) on every `BuildCartDtoAsync` call and silently cleared if it's become invalid |
 
 **CartItems**
 
@@ -494,6 +495,97 @@ Indexes: unique on `(UserId, ProductId)` - toggling an already-wishlisted
 product removes the row rather than allowing a duplicate. Plain
 `BaseEntity` - no soft delete or `RowVersion`, same reasoning as
 `RecentlyViewedItems`.
+
+## Promotions
+
+Promotions & coupons (Milestone 7.1) - either automatic (`CouponCode` null,
+not yet auto-applied to any cart - see `Architecture.md`) or code-based
+(customer enters `CouponCode` on the Cart page). Only one scope FK is ever
+set, matching `ScopeType`.
+
+| Column | Type | Nullable | Purpose |
+|---|---|---|---|
+| Id | int (identity) | No | Surrogate key |
+| Name | nvarchar(200) | No | Admin-facing label |
+| Description | nvarchar(500) | Yes | |
+| CouponCode | nvarchar(50) | Yes | Unique when present (filtered index); null means automatic |
+| DiscountType | int (enum: Percentage/FixedAmount) | No | |
+| DiscountValue | decimal(18,2) | No | A percentage (0-100) or a currency amount, per `DiscountType` |
+| ScopeType | int (enum: EntireOrder/Category/Brand/Product) | No | Determines which of the three scope FKs (if any) is set |
+| ScopeCategoryId | int (FK -> Categories) | Yes | Restrict; set only when `ScopeType = Category` |
+| ScopeBrandId | int (FK -> Brands) | Yes | Restrict; set only when `ScopeType = Brand` |
+| ScopeProductId | int (FK -> Products) | Yes | Restrict; set only when `ScopeType = Product` |
+| MinimumOrderAmount | decimal(18,2) | Yes | Checked against the cart's full subtotal, regardless of scope |
+| MaxDiscountAmount | decimal(18,2) | Yes | Caps a `Percentage` discount's currency amount |
+| StartsAtUtc | datetime2 | No | |
+| EndsAtUtc | datetime2 | Yes | Null means no end date |
+| MaxTotalUses | int | Yes | Recorded, **not enforced** - see `Architecture.md`'s Milestone 7.1 section |
+| MaxUsesPerCustomer | int | Yes | Recorded, **not enforced** - same reason |
+| IsActive | bool | No | |
+
+Indexes: unique on `CouponCode` filtered where `IS NOT NULL`. `Auditable
+Entity` (soft delete + `RowVersion`), same as `HomePageBanners` - an
+admin-managed content table, not a rolling/ledger one.
+
+## TaxRates
+
+Tax service (Milestone 7.2) - maps a jurisdiction + product tax category to
+a percentage. `TaxCategory` is matched against `Products.TaxCategory` by
+plain case-insensitive string equality, not a shared FK/enum - see
+`Architecture.md`'s Milestone 7.2 section for why. There's no real customer
+destination to calculate against until Milestone 8.1's Addresses exist, so
+this table is consumed today only as an estimate against the store's
+configured default jurisdiction (`Store:DefaultTaxCountryCode`/
+`Store:DefaultTaxRegionCode`).
+
+| Column | Type | Nullable | Purpose |
+|---|---|---|---|
+| Id | int (identity) | No | Surrogate key |
+| CountryCode | nvarchar(2) | No | ISO 3166-1 alpha-2 (e.g. `US`, `PK`) |
+| RegionCode | nvarchar(10) | Yes | Sub-national (e.g. a US state); null means a whole-country rate |
+| TaxCategory | nvarchar(50) | No | Matched against `Products.TaxCategory`, case-insensitive |
+| RatePercent | decimal(9,4) | No | 0-100; extra precision vs. the usual decimal(18,2) money convention since real combined rates carry fractional precision (e.g. 7.375%) |
+| IsActive | bool | No | |
+
+Indexes: unique on `(CountryCode, TaxCategory)` filtered where `RegionCode
+IS NULL` (one whole-country rate per category), and unique on
+`(CountryCode, RegionCode, TaxCategory)` filtered where `RegionCode IS NOT
+NULL` (one region-specific rate per category) - the same dual-filtered-
+index technique `Carts`' `UserId`/`GuestToken` pair uses. `AuditableEntity`
+(soft delete + `RowVersion`), same reasoning as `Promotions`.
+
+## ShippingMethods
+
+Shipping (Milestone 7.3) - a named, admin-managed method (e.g. "Standard",
+"Express") for a jurisdiction. Unlike `TaxRates` (one rate per category per
+jurisdiction), several named methods can coexist for the same jurisdiction,
+so uniqueness is on `Name` within the jurisdiction rather than the
+jurisdiction alone - see `Architecture.md`'s Milestone 7.3 section. Cost
+uses `Products.Weight`, a field that's existed unused since Milestone 2.4.
+Consumed today only as an estimate against the store's configured default
+jurisdiction (`Store:DefaultShippingCountryCode`/
+`Store:DefaultShippingRegionCode`), same reasoning as `TaxRates`.
+
+| Column | Type | Nullable | Purpose |
+|---|---|---|---|
+| Id | int (identity) | No | Surrogate key |
+| Name | nvarchar(200) | No | Admin-facing label, e.g. "Standard Shipping" |
+| Description | nvarchar(500) | Yes | |
+| CountryCode | nvarchar(2) | No | ISO 3166-1 alpha-2 |
+| RegionCode | nvarchar(10) | Yes | Sub-national; null means a whole-country method |
+| BaseRate | decimal(18,2) | No | Flat handling fee |
+| RatePerKg | decimal(18,2) | No | Added per kg of total order weight |
+| FreeShippingThreshold | decimal(18,2) | Yes | Cost becomes 0 once the (pre-discount) subtotal meets this |
+| EstimatedDeliveryDaysMin | int | Yes | |
+| EstimatedDeliveryDaysMax | int | Yes | |
+| DisplayOrder | int | No | |
+| IsActive | bool | No | |
+
+Indexes: unique on `(CountryCode, Name)` filtered where `RegionCode IS
+NULL`, and unique on `(CountryCode, RegionCode, Name)` filtered where
+`RegionCode IS NOT NULL` - same dual-filtered-index technique as
+`TaxRates`/`Carts`. `AuditableEntity` (soft delete + `RowVersion`), same
+reasoning as `TaxRates`/`Promotions`.
 
 ## Soft delete and RowVersion
 

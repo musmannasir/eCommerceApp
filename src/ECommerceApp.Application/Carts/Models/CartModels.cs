@@ -62,8 +62,33 @@ public record CartItemDto(
     decimal? PreviousUnitPrice,
     bool QuantityExceedsStock);
 
+/// <summary>
+/// AppliedCouponCode/AppliedPromotionName/PromotionDiscount are null/zero when
+/// no promotion is applied. Subtotal keeps its pre-discount meaning; Total is
+/// Subtotal minus PromotionDiscount (Milestone 7.1). EstimatedTax (Milestone
+/// 7.2) is computed against the store's configured default tax jurisdiction,
+/// not a real customer destination (no Address entity exists until Milestone
+/// 8.1) - and against pre-discount line totals, since allocating a
+/// cart-level discount across lines for tax purposes is the Checkout
+/// Calculation Service's job (Milestone 7.4), not this estimate's.
+/// EstimatedTaxRateConfigured is false when no tax rate at all has been set
+/// up for the store's default jurisdiction, distinct from a genuine 0% rate.
+/// EstimatedShipping (Milestone 7.3) is the cheapest available shipping
+/// method's cost against the store's default shipping jurisdiction and the
+/// cart's total weight, same estimate-only reasoning as EstimatedTax;
+/// EstimatedShippingRateConfigured is false when no active method exists
+/// for that jurisdiction at all, distinct from a genuine free/zero-cost one.
+/// </summary>
 public record CartDto(
     int? Id,
     IReadOnlyList<CartItemDto> Items,
     int TotalItemCount,
-    decimal Subtotal);
+    decimal Subtotal,
+    string? AppliedCouponCode,
+    string? AppliedPromotionName,
+    decimal PromotionDiscount,
+    decimal Total,
+    decimal EstimatedTax,
+    bool EstimatedTaxRateConfigured,
+    decimal EstimatedShipping,
+    bool EstimatedShippingRateConfigured);

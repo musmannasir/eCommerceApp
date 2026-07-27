@@ -1,0 +1,19 @@
+@model PromotionFormViewModel
+@{
+    ViewData["Title"] = "Edit promotion";
+}
+
+<h1 class="h3 mb-4">Edit promotion</h1>
+
+@if (TempData["Message"] is string message)
+{
+    <div class="alert alert-success">@message</div>
+}
+@if (TempData["Error"] is string error)
+{
+    <div class="alert alert-danger">@error</div>
+}
+
+<form asp-action="Edit" method="post">
+    @await Html.PartialAsync("_Form", Model)
+</form>

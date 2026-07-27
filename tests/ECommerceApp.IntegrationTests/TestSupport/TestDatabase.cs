@@ -31,6 +31,9 @@ public static class TestDatabase
 
             DELETE FROM CartItems;
             DELETE FROM Carts;
+            DELETE FROM Promotions;
+            DELETE FROM TaxRates;
+            DELETE FROM ShippingMethods;
 
             DELETE FROM GoodsReceiptItems;
             DELETE FROM GoodsReceipts;
@@ -62,6 +65,9 @@ public static class TestDatabase
             -- reset them explicitly so ids stay small and predictable across repeated local runs.
             DBCC CHECKIDENT ('CartItems', RESEED, 0);
             DBCC CHECKIDENT ('Carts', RESEED, 0);
+            DBCC CHECKIDENT ('Promotions', RESEED, 0);
+            DBCC CHECKIDENT ('TaxRates', RESEED, 0);
+            DBCC CHECKIDENT ('ShippingMethods', RESEED, 0);
             DBCC CHECKIDENT ('InventoryReservations', RESEED, 0);
             DBCC CHECKIDENT ('StockMovements', RESEED, 0);
             DBCC CHECKIDENT ('StockAdjustments', RESEED, 0);

@@ -22,9 +22,15 @@ match the storefront listing queries' actual filter/sort shapes. Milestone
 at all** - everything they need already existed from Milestone 2 (`Product`,
 `ProductVariant`, its attribute values) and Milestone 3.1 (`InventoryItem`);
 `IPricingService` is a pure, stateless calculator with no table of its own -
-see `Data-Dictionary.md` for full column detail. No customer-order tables
-exist yet; those arrive starting Milestone 9. This document grows into a full
-ER-level description of the schema as they're introduced.
+see `Data-Dictionary.md` for full column detail. Later migrations add
+`RecentlyViewedItems` (Milestone 5.3), `Carts`/`CartItems` plus `CartItems.
+PriceWhenAdded` (Milestone 6.1/6.2), `WishlistItems` (Milestone 6.3), and
+`Promotions` plus `Carts.AppliedPromotionId` (Milestone 7.1, `PromotionSchema`),
+`TaxRates` (Milestone 7.2, `TaxSchema`), and `ShippingMethods` (Milestone
+7.3, `ShippingSchema`) - see `Data-Dictionary.md` for full column detail on
+all of them. No customer-order tables exist yet; those arrive starting
+Milestone 9. This document grows into a full ER-level description of the
+schema as they're introduced.
 
 `ApplicationDbContext` now extends `IdentityDbContext<ApplicationUser,
 IdentityRole, string>` rather than plain `DbContext`, so Identity's tables

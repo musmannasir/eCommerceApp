@@ -1,0 +1,10 @@
+@model PromotionFormViewModel
+@{
+    ViewData["Title"] = "New promotion";
+}
+
+<h1 class="h3 mb-4">New promotion</h1>
+
+<form asp-action="Create" method="post">
+    @await Html.PartialAsync("_Form", Model)
+</form>

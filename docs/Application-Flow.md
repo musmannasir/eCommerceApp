@@ -90,6 +90,41 @@ wishlist. What's live today:
   inventory and backorder-allowed items are exempt from the stock cap, the
   same leniency the product detail page already applies); UpdateQuantity
   additionally rejects an item that's become unavailable since it was added.
+- `POST /Cart/ApplyCoupon`, `POST /Cart/RemoveCoupon` - Milestone 7.1, same
+  AJAX/CSRF-header pattern as every other Cart endpoint. Applying validates
+  the code (active, in its date window, minimum order met, and - for a
+  Category/Brand/Product-scoped promotion - at least one matching line in
+  the cart) and replaces whatever was applied before (at most one at a
+  time, no stacking); an invalid code returns a `400` with a message shown
+  inline on the Cart page, the cart itself untouched. The Cart page's
+  summary now shows the applied coupon code/name with a Remove button (or
+  an input + Apply button if none is applied), Subtotal, Discount (when
+  any), and Total - `Subtotal` keeps its pre-discount meaning, `Total` is
+  `Subtotal` minus the discount. A previously-applied coupon that's since
+  become invalid (expired, deactivated, or its scoped item no longer in the
+  cart) is silently cleared the next time the cart is read - same
+  "re-derive truth on every read" pattern as an unavailable cart line - see
+  `Architecture.md`'s Milestone 7.1 section.
+- The Cart page's summary also shows an **Estimated tax** line (Milestone
+  7.2) when at least one tax rate is configured for the store's default
+  jurisdiction - computed per line by `Product.TaxCategory` (non-taxable
+  products excluded) against pre-discount line totals, since there's no
+  real customer destination to calculate against yet (`Address` arrives in
+  Milestone 8.1) and allocating the cart's Promotion discount across lines
+  for tax purposes is the Checkout Calculation Service's job (Milestone
+  7.4). The line is hidden entirely - not shown as $0.00 - when no rate is
+  configured at all, so the store doesn't appear to be untaxed by default.
+  See `Architecture.md`'s Milestone 7.2 section.
+- The Cart page's summary also shows an **Estimated shipping** line
+  (Milestone 7.3), the cheapest active shipping method for the store's
+  default jurisdiction - cost is a base rate plus a per-kg rate applied to
+  the cart's total weight (from `Product.Weight`, treating a missing weight
+  as 0kg), waived entirely once a method's free-shipping threshold is met
+  by the (pre-discount) subtotal. Same estimate-only reasoning as tax - no
+  real destination until Milestone 8.1, no method-picker UI until Milestone
+  8.2 - and hidden entirely rather than shown as $0.00/"Free" when no
+  method is configured at all. See `Architecture.md`'s Milestone 7.3
+  section.
 - `GET /Wishlist` (`[Authorize]`) - Milestone 6.3, account-only (no guest
   wishlist, unlike Cart). Every saved product, most-recently-added first,
   with a Remove button; a product that's since become unpublished/inactive/
@@ -154,6 +189,35 @@ wishlist. What's live today:
 - `/Admin/HomePageBanners` - hero/promo banner CRUD (soft delete + recycle
   bin, image upload), gated by `CanManageCatalog`. Feeds the public home
   page. See `Admin-User-Guide.md`.
+- `/Admin/Promotions` - Milestone 7.1, promotion/coupon CRUD (soft delete +
+  recycle bin), gated by `CanManageCatalog` (same policy as Home Page
+  Banners - no separate Marketing policy exists). Discount type
+  (Percentage/Fixed amount), scope (Entire order/Category/Brand/Product,
+  with a matching dropdown that only shows the field the selected scope
+  needs), minimum order amount, max discount cap, a start/end date window,
+  and Max total uses/Max uses per customer (recorded but not yet enforced -
+  a note to that effect is shown right on the form). See
+  `Admin-User-Guide.md`.
+- `/Admin/TaxRates` - Milestone 7.2, tax rate CRUD (soft delete + recycle
+  bin) under a new "Checkout" nav section, gated by `CanManageCatalog` (no
+  separate Checkout/Finance policy exists yet). Country code (ISO alpha-2),
+  optional region code (blank = whole-country rate), tax category (matched
+  against a product's Tax Category by plain string, case-insensitive), and
+  a percentage rate. Feeds the storefront Cart page's "Estimated tax" line
+  against the store's configured default jurisdiction - not real,
+  destination-based tax, which arrives with Checkout (Milestones 7.4/8).
+  See `Admin-User-Guide.md`.
+- `/Admin/ShippingMethods` - Milestone 7.3, shipping method CRUD (soft
+  delete + recycle bin) in the same "Checkout" nav section as Tax Rates,
+  gated by `CanManageCatalog`. Country code, optional region code (blank =
+  whole-country method), a base rate plus a per-kg rate (using
+  `Product.Weight`), an optional free-shipping subtotal threshold, and an
+  optional estimated delivery-day range. Unlike Tax Rates, several named
+  methods can coexist for the same jurisdiction (e.g. Standard and
+  Express). The cheapest active method for the store's configured default
+  jurisdiction feeds the storefront Cart page's "Estimated shipping" line -
+  not real, destination-based shipping or method selection, which arrive
+  with Checkout (Milestones 7.4/8). See `Admin-User-Guide.md`.
 
 ### API (`/api/v1/auth`, JWT bearer)
 

@@ -1,8 +1,13 @@
 using ECommerceApp.Application.Carts;
 using ECommerceApp.Application.Carts.Models;
 using ECommerceApp.Application.Common.Interfaces;
+using ECommerceApp.Application.Marketing;
+using ECommerceApp.Application.Marketing.Models;
 using ECommerceApp.Application.Pricing;
+using ECommerceApp.Application.Shipping;
 using ECommerceApp.Application.Storefront.Models;
+using ECommerceApp.Application.Taxation;
+using ECommerceApp.Application.Taxation.Models;
 using ECommerceApp.Domain.Carts;
 using ECommerceApp.Domain.Catalog;
 using ECommerceApp.Domain.Common;
@@ -23,12 +28,20 @@ public sealed class CartService : ICartService
 {
     private readonly ApplicationDbContext _dbContext;
     private readonly IPricingService _pricingService;
+    private readonly IPromotionService _promotionService;
+    private readonly ITaxService _taxService;
+    private readonly IShippingService _shippingService;
     private readonly IClock _clock;
 
-    public CartService(ApplicationDbContext dbContext, IPricingService pricingService, IClock clock)
+    public CartService(
+        ApplicationDbContext dbContext, IPricingService pricingService, IPromotionService promotionService,
+        ITaxService taxService, IShippingService shippingService, IClock clock)
     {
         _dbContext = dbContext;
         _pricingService = pricingService;
+        _promotionService = promotionService;
+        _taxService = taxService;
+        _shippingService = shippingService;
         _clock = clock;
     }
 
@@ -36,7 +49,7 @@ public sealed class CartService : ICartService
     {
         var cart = await FindCartAsync(owner, cancellationToken);
         return cart is null
-            ? new CartDto(null, Array.Empty<CartItemDto>(), 0, 0)
+            ? EmptyCart()
             : await BuildCartDtoAsync(cart.Id, cancellationToken);
     }
 
@@ -180,7 +193,7 @@ public sealed class CartService : ICartService
         var cart = await FindCartAsync(owner, cancellationToken);
         if (cart is null)
         {
-            return new CartDto(null, Array.Empty<CartItemDto>(), 0, 0);
+            return EmptyCart();
         }
 
         _dbContext.CartItems.RemoveRange(cart.Items);
@@ -243,6 +256,89 @@ public sealed class CartService : ICartService
         return await BuildCartDtoAsync(userCart.Id, cancellationToken);
     }
 
+    public async Task<Result<CartDto>> ApplyCouponAsync(CartOwner owner, string couponCode, CancellationToken cancellationToken = default)
+    {
+        var cart = await FindCartAsync(owner, cancellationToken);
+        if (cart is null || cart.Items.Count == 0)
+        {
+            return Result.Failure<CartDto>(Error.Validation("cart.empty", "Add items to your cart before applying a coupon."));
+        }
+
+        var (lines, subtotal) = await BuildPromotionLinesAsync(cart.Id, cancellationToken);
+        var applicationResult = await _promotionService.FindApplicablePromotionAsync(couponCode, lines, subtotal, cancellationToken);
+        if (applicationResult.IsFailure)
+        {
+            return Result.Failure<CartDto>(applicationResult.FirstError);
+        }
+
+        cart.AppliedPromotionId = applicationResult.Value.PromotionId;
+        cart.UpdatedAtUtc = _clock.UtcNow;
+        await _dbContext.SaveChangesAsync(cancellationToken);
+
+        return Result.Success(await BuildCartDtoAsync(cart.Id, cancellationToken));
+    }
+
+    public async Task<CartDto> RemoveCouponAsync(CartOwner owner, CancellationToken cancellationToken = default)
+    {
+        var cart = await FindCartAsync(owner, cancellationToken);
+        if (cart is null)
+        {
+            return EmptyCart();
+        }
+
+        cart.AppliedPromotionId = null;
+        cart.UpdatedAtUtc = _clock.UtcNow;
+        await _dbContext.SaveChangesAsync(cancellationToken);
+
+        return await BuildCartDtoAsync(cart.Id, cancellationToken);
+    }
+
+    /// <summary>
+    /// Builds the lean per-line snapshot IPromotionService needs (ProductId/
+    /// CategoryId/BrandId/LineTotal) from the cart's currently-available,
+    /// priced lines - shared by ApplyCouponAsync (validating a new code before
+    /// it's applied) and BuildCartDtoAsync (re-validating whatever's already
+    /// applied, on every read).
+    /// </summary>
+    private async Task<(IReadOnlyList<PromotionCartLine> Lines, decimal Subtotal)> BuildPromotionLinesAsync(int cartId, CancellationToken cancellationToken)
+    {
+        var (itemDtos, products) = await ComputeItemDtosAsync(cartId, cancellationToken);
+        var availableItems = itemDtos.Where(i => i.IsAvailable).ToList();
+        var subtotal = availableItems.Sum(i => i.LineTotal);
+        var lines = availableItems
+            .Select(i => new PromotionCartLine(i.ProductId, products[i.ProductId].CategoryId, products[i.ProductId].BrandId, i.LineTotal))
+            .ToList();
+
+        return (lines, subtotal);
+    }
+
+    /// <summary>
+    /// Re-validates the cart's applied promotion (if any) against its current
+    /// lines/subtotal via IPromotionService, silently clearing it if it's no
+    /// longer valid - see Cart.AppliedPromotionId's doc comment.
+    /// </summary>
+    private async Task<(string? CouponCode, string? PromotionName, decimal Discount)> ResolveAppliedPromotionAsync(
+        int cartId, IReadOnlyList<PromotionCartLine> lines, decimal subtotal, CancellationToken cancellationToken)
+    {
+        var cart = await _dbContext.Carts.FirstOrDefaultAsync(c => c.Id == cartId, cancellationToken);
+        if (cart?.AppliedPromotionId is not { } promotionId)
+        {
+            return (null, null, 0);
+        }
+
+        var validation = await _promotionService.ValidateAppliedPromotionAsync(promotionId, lines, subtotal, cancellationToken);
+        if (validation.IsFailure)
+        {
+            cart.AppliedPromotionId = null;
+            await _dbContext.SaveChangesAsync(cancellationToken);
+            return (null, null, 0);
+        }
+
+        return (validation.Value.CouponCode, validation.Value.Name, validation.Value.DiscountAmount);
+    }
+
+    private static CartDto EmptyCart() => new(null, Array.Empty<CartItemDto>(), 0, 0, null, null, 0, 0, 0, false, 0, false);
+
     private async Task<decimal> CurrentPriceAsync(int productId, int? variantId, CancellationToken cancellationToken)
     {
         var product = await _dbContext.Products
@@ -285,6 +381,45 @@ public sealed class CartService : ICartService
 
     private async Task<CartDto> BuildCartDtoAsync(int cartId, CancellationToken cancellationToken)
     {
+        var (itemDtos, products) = await ComputeItemDtosAsync(cartId, cancellationToken);
+
+        if (itemDtos.Count == 0)
+        {
+            // No lines left to evaluate a promotion against - clear it the
+            // same way an invalid one gets cleared below, rather than leaving
+            // a discount attached to a cart with nothing in it.
+            await ResolveAppliedPromotionAsync(cartId, Array.Empty<PromotionCartLine>(), 0, cancellationToken);
+            return new CartDto(cartId, Array.Empty<CartItemDto>(), 0, 0, null, null, 0, 0, 0, false, 0, false);
+        }
+
+        var availableItems = itemDtos.Where(i => i.IsAvailable).ToList();
+        var subtotal = availableItems.Sum(i => i.LineTotal);
+        var lines = availableItems
+            .Select(i => new PromotionCartLine(i.ProductId, products[i.ProductId].CategoryId, products[i.ProductId].BrandId, i.LineTotal))
+            .ToList();
+
+        var (couponCode, promotionName, discount) = await ResolveAppliedPromotionAsync(cartId, lines, subtotal, cancellationToken);
+
+        var taxableLines = availableItems
+            .Where(i => products[i.ProductId].IsTaxable)
+            .Select(i => new TaxableLine(i.LineTotal, products[i.ProductId].TaxCategory))
+            .ToList();
+        var estimatedTax = await _taxService.CalculateEstimatedTaxAsync(taxableLines, cancellationToken);
+
+        // A product with no recorded weight contributes 0kg - same leniency
+        // untracked inventory already gets, rather than blocking the estimate.
+        var totalWeightKg = availableItems.Sum(i => (products[i.ProductId].Weight ?? 0m) * i.Quantity);
+        var estimatedShipping = await _shippingService.CalculateEstimatedShippingAsync(totalWeightKg, subtotal, cancellationToken);
+
+        return new CartDto(
+            cartId, itemDtos, availableItems.Sum(i => i.Quantity), subtotal,
+            couponCode, promotionName, discount, subtotal - discount,
+            estimatedTax.TaxAmount, estimatedTax.RateConfigured,
+            estimatedShipping.Cost, estimatedShipping.RateConfigured);
+    }
+
+    private async Task<(List<CartItemDto> ItemDtos, Dictionary<int, Product> Products)> ComputeItemDtosAsync(int cartId, CancellationToken cancellationToken)
+    {
         var items = await _dbContext.CartItems
             .Where(ci => ci.CartId == cartId)
             .OrderBy(ci => ci.AddedAtUtc)
@@ -292,7 +427,7 @@ public sealed class CartService : ICartService
 
         if (items.Count == 0)
         {
-            return new CartDto(cartId, Array.Empty<CartItemDto>(), 0, 0);
+            return (new List<CartItemDto>(), new Dictionary<int, Product>());
         }
 
         var productIds = items.Select(i => i.ProductId).Distinct().ToList();
@@ -354,8 +489,7 @@ public sealed class CartService : ICartService
                 quantityExceedsStock));
         }
 
-        var availableItems = itemDtos.Where(i => i.IsAvailable).ToList();
-        return new CartDto(cartId, itemDtos, availableItems.Sum(i => i.Quantity), availableItems.Sum(i => i.LineTotal));
+        return (itemDtos, products);
     }
 
     private static string? BuildImagePath(Product product, int? variantId)

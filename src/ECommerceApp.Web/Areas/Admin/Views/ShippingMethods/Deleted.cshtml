@@ -1,0 +1,32 @@
+@model PagedResult<ShippingMethodDto>
+@{
+    ViewData["Title"] = "Deleted shipping methods";
+}
+
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h1 class="h3 mb-0">Recycle bin - Shipping methods</h1>
+    <a asp-action="Index" class="btn btn-outline-secondary">Back to shipping methods</a>
+</div>
+
+<table class="table table-hover align-middle">
+    <thead><tr><th>Name</th><th>Country</th><th>Region</th><th></th></tr></thead>
+    <tbody>
+        @foreach (var method in Model.Items)
+        {
+            <tr>
+                <td>@method.Name</td>
+                <td class="text-muted small">@method.CountryCode</td>
+                <td class="text-muted small">@(method.RegionCode ?? "Whole country")</td>
+                <td class="text-end">
+                    <form asp-action="Restore" asp-route-id="@method.Id" method="post" class="d-inline">
+                        <button type="submit" class="btn btn-sm btn-outline-success">Restore</button>
+                    </form>
+                </td>
+            </tr>
+        }
+        @if (Model.Items.Count == 0)
+        {
+            <tr><td colspan="4" class="text-center text-muted py-4">Nothing here.</td></tr>
+        }
+    </tbody>
+</table>

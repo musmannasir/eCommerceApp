@@ -1,0 +1,19 @@
+@model ShippingMethodFormViewModel
+@{
+    ViewData["Title"] = "Edit shipping method";
+}
+
+<h1 class="h3 mb-4">Edit shipping method</h1>
+
+@if (TempData["Message"] is string message)
+{
+    <div class="alert alert-success">@message</div>
+}
+@if (TempData["Error"] is string error)
+{
+    <div class="alert alert-danger">@error</div>
+}
+
+<form asp-action="Edit" method="post">
+    @await Html.PartialAsync("_Form", Model)
+</form>
