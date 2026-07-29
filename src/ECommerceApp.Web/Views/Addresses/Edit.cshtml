@@ -1,0 +1,10 @@
+@model ECommerceApp.Web.Models.Addresses.AddressFormViewModel
+@{
+    ViewData["Title"] = "Edit address";
+}
+
+<h1 class="h3 mb-4">Edit address</h1>
+
+<form asp-action="Edit" asp-route-id="@Model.Id" method="post">
+    @await Html.PartialAsync("_Form", Model)
+</form>

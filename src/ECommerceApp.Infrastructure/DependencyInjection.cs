@@ -1,6 +1,8 @@
+using ECommerceApp.Application.Addresses;
 using ECommerceApp.Application.Auth;
 using ECommerceApp.Application.Carts;
 using ECommerceApp.Application.Catalog;
+using ECommerceApp.Application.Checkout;
 using ECommerceApp.Application.Common.Interfaces;
 using ECommerceApp.Application.Common.Options;
 using ECommerceApp.Application.Inventory;
@@ -10,8 +12,10 @@ using ECommerceApp.Application.Shipping;
 using ECommerceApp.Application.Storefront;
 using ECommerceApp.Application.Taxation;
 using ECommerceApp.Application.Wishlist;
+using ECommerceApp.Infrastructure.Addresses;
 using ECommerceApp.Infrastructure.Carts;
 using ECommerceApp.Infrastructure.Catalog;
+using ECommerceApp.Infrastructure.Checkout;
 using ECommerceApp.Infrastructure.Common;
 using ECommerceApp.Infrastructure.Email;
 using ECommerceApp.Infrastructure.HealthChecks;
@@ -101,6 +105,7 @@ public static class DependencyInjection
         services.AddScoped<IPromotionService, PromotionService>();
         services.AddScoped<ITaxService, TaxService>();
         services.AddScoped<IShippingService, ShippingService>();
+        services.AddScoped<ICheckoutCalculationService, CheckoutCalculationService>();
         services.AddScoped<IHomePageService, HomePageService>();
         services.AddScoped<ICatalogBrowseService, CatalogBrowseService>();
         services.AddScoped<IProductDetailService, ProductDetailService>();
@@ -108,6 +113,7 @@ public static class DependencyInjection
         services.AddSingleton<IPricingService, PricingService>();
         services.AddScoped<ICartService, CartService>();
         services.AddScoped<IWishlistService, WishlistService>();
+        services.AddScoped<IAddressService, AddressService>();
 
         return services;
     }

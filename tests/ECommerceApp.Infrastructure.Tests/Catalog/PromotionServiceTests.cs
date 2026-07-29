@@ -241,6 +241,60 @@ public class PromotionServiceTests : IDisposable
         result.FirstError.Type.Should().Be(ErrorType.NotFound);
     }
 
+    [Fact]
+    public async Task LineDiscounts_for_an_entire_order_promotion_are_split_proportionally_across_all_lines()
+    {
+        await _harness.PromotionService.CreateAsync(EntireOrderRequest("SAVE10", 10m));
+        var lines = new[]
+        {
+            new PromotionCartLine(1, 1, null, 75m),
+            new PromotionCartLine(2, 1, null, 25m),
+        };
+
+        var result = await _harness.PromotionService.FindApplicablePromotionAsync("SAVE10", lines, 100m);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.LineDiscounts.Should().HaveCount(2);
+        result.Value.LineDiscounts[0].Should().Be(7.5m);
+        result.Value.LineDiscounts[1].Should().Be(2.5m);
+        result.Value.LineDiscounts.Sum().Should().Be(result.Value.DiscountAmount);
+    }
+
+    [Fact]
+    public async Task LineDiscounts_for_a_category_scoped_promotion_are_zero_for_lines_outside_the_scope()
+    {
+        var request = EntireOrderRequest("CATSALE", 10m) with { ScopeType = "Category", ScopeCategoryId = 7 };
+        await _harness.PromotionService.CreateAsync(request);
+        var lines = new[]
+        {
+            new PromotionCartLine(1, 7, null, 60m),
+            new PromotionCartLine(2, 8, null, 40m),
+        };
+
+        var result = await _harness.PromotionService.FindApplicablePromotionAsync("CATSALE", lines, 100m);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.LineDiscounts[0].Should().Be(6m);
+        result.Value.LineDiscounts[1].Should().Be(0m);
+    }
+
+    [Fact]
+    public async Task LineDiscounts_always_sum_to_exactly_the_discount_amount_despite_rounding()
+    {
+        await _harness.PromotionService.CreateAsync(EntireOrderRequest("SAVE10", 10m));
+        var lines = new[]
+        {
+            new PromotionCartLine(1, 1, null, 10m),
+            new PromotionCartLine(2, 1, null, 10m),
+            new PromotionCartLine(3, 1, null, 10m),
+        };
+
+        var result = await _harness.PromotionService.FindApplicablePromotionAsync("SAVE10", lines, 30m);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.LineDiscounts.Sum().Should().Be(result.Value.DiscountAmount);
+    }
+
     private static CreatePromotionRequest EntireOrderRequest(string couponCode, decimal discountValue, string discountType = "Percentage") =>
         new(
             "Ten percent off", null, couponCode, discountType, discountValue, "EntireOrder",

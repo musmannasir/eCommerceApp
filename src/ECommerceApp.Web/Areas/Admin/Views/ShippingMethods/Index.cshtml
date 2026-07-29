@@ -15,8 +15,9 @@
 <p class="text-muted small">
     The cheapest active method for the store's default jurisdiction
     (<code>Store:DefaultShippingCountryCode</code>/<code>Store:DefaultShippingRegionCode</code>) powers
-    the Cart page's "Estimated shipping" line - real, destination-based shipping
-    calculation and method selection arrive with Checkout (Milestones 7.4/8).
+    the Cart page's "Estimated shipping" line. Real, destination-based shipping calculation and
+    method selection against a customer's saved address now happen in the Checkout flow - order
+    placement itself arrives in Milestone 9.1.
 </p>
 
 @if (TempData["Message"] is string message)

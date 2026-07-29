@@ -34,6 +34,7 @@ public static class TestDatabase
             DELETE FROM Promotions;
             DELETE FROM TaxRates;
             DELETE FROM ShippingMethods;
+            DELETE FROM Addresses;
 
             DELETE FROM GoodsReceiptItems;
             DELETE FROM GoodsReceipts;
@@ -68,6 +69,7 @@ public static class TestDatabase
             DBCC CHECKIDENT ('Promotions', RESEED, 0);
             DBCC CHECKIDENT ('TaxRates', RESEED, 0);
             DBCC CHECKIDENT ('ShippingMethods', RESEED, 0);
+            DBCC CHECKIDENT ('Addresses', RESEED, 0);
             DBCC CHECKIDENT ('InventoryReservations', RESEED, 0);
             DBCC CHECKIDENT ('StockMovements', RESEED, 0);
             DBCC CHECKIDENT ('StockAdjustments', RESEED, 0);

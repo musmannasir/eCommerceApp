@@ -81,6 +81,33 @@ public class ShippingServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task Creating_a_method_matching_a_deleted_ones_name_and_jurisdiction_is_rejected_with_a_restore_hint()
+    {
+        var created = await _harness.ShippingService.CreateAsync(StandardRequest());
+        await _harness.ShippingService.DeleteAsync(created.Value.Id);
+
+        var result = await _harness.ShippingService.CreateAsync(StandardRequest() with { BaseRate = 10m });
+
+        result.IsFailure.Should().BeTrue();
+        result.FirstError.Type.Should().Be(ErrorType.Conflict);
+        result.FirstError.Message.Should().Contain("deleted");
+    }
+
+    [Fact]
+    public async Task Updating_a_method_to_match_a_deleted_ones_name_and_jurisdiction_is_rejected()
+    {
+        var deleted = await _harness.ShippingService.CreateAsync(StandardRequest());
+        await _harness.ShippingService.DeleteAsync(deleted.Value.Id);
+        var other = await _harness.ShippingService.CreateAsync(StandardRequest() with { CountryCode = "CA" });
+
+        var result = await _harness.ShippingService.UpdateAsync(new UpdateShippingMethodRequest(
+            other.Value.Id, "Standard Shipping", null, "US", null, 8m, 2m, null, null, null, 0, true));
+
+        result.IsFailure.Should().BeTrue();
+        result.FirstError.Type.Should().Be(ErrorType.Conflict);
+    }
+
+    [Fact]
     public async Task Cost_is_base_rate_plus_rate_per_kg_times_total_weight()
     {
         await _harness.ShippingService.CreateAsync(StandardRequest() with { BaseRate = 5m, RatePerKg = 2m });

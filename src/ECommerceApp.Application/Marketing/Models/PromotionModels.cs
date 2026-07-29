@@ -66,8 +66,16 @@ public record UpdatePromotionRequest(
 /// </summary>
 public record PromotionCartLine(int ProductId, int CategoryId, int? BrandId, decimal LineTotal);
 
+/// <summary>
+/// LineDiscounts (Milestone 7.4) is one entry per input line, same order,
+/// summing exactly to DiscountAmount - a line outside the promotion's scope
+/// gets 0. Lets the Checkout Calculation Service compute each line's
+/// post-discount, taxable/shippable amount without duplicating scope-
+/// matching logic that already lives in PromotionService.Evaluate.
+/// </summary>
 public record PromotionApplicationDto(
     int PromotionId,
     string Name,
     string CouponCode,
-    decimal DiscountAmount);
+    decimal DiscountAmount,
+    IReadOnlyList<decimal> LineDiscounts);

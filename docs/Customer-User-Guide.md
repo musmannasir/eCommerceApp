@@ -128,7 +128,13 @@ have anything in it) to see everything you've added:
   also see an "Estimated shipping" line (or "Free" if your order qualifies
   for free shipping). Like estimated tax, this is a preview based on the
   store's typical shipping option - your actual shipping cost and choice
-  of delivery speed are confirmed at checkout.
+  of delivery speed are confirmed at checkout. If you have a coupon applied,
+  both the estimated tax and estimated shipping (including whether you
+  qualify for free shipping) are calculated after your discount is applied,
+  not before.
+- **Estimated total**: when tax and/or shipping estimates are shown, you'll
+  also see an "Estimated total" line - your Total plus estimated tax and
+  shipping, all in one number. Still just a preview, same as its parts.
 - **Checkout** isn't available yet - that arrives in a later milestone.
 
 ### Your Wishlist
@@ -146,4 +152,46 @@ devices, not just sit in a cookie on one browser.
   just quietly disappears from the list rather than cluttering it with
   something you can't act on.
 
-Checkout and order tracking arrive in later milestones (7 onward).
+### Your addresses
+
+Go to your **Profile** page and click **Manage addresses** to see your saved
+addresses. Requires an account, same as Wishlist.
+
+- **New address** opens a form for name, phone, address lines, city,
+  region/state, postal code, and country.
+- Your very first saved address is automatically your default - there's
+  nothing to compare it against yet.
+- **Set as default** switches which address is used as the default; only one
+  address can be the default at a time.
+- **Edit** updates any field, including which address is the default.
+- **Delete** removes an address for good. If you delete your default
+  address, you're left with no default at all until you set a new one -
+  nothing is picked for you automatically.
+
+### Checking out
+
+Click **Checkout** on your Cart page (requires an account, same as
+Wishlist and your address book - if you're a guest, you'll be asked to log
+in first, and anything already in your cart comes with you).
+
+1. **Choose a shipping address** from your saved addresses (your default is
+   pre-selected). If you haven't saved one yet, you'll be asked to add one
+   first, then brought straight back here.
+2. **Choose a shipping method** - every option available for that address,
+   with its real cost (already reflecting any coupon you've applied).
+3. **Review your order** - the real subtotal, discount, tax, and shipping
+   for your chosen address, plus the grand total. This replaces the
+   Cart page's estimates with your actual numbers.
+4. **Place order** - re-checks everything one last time (your cart, stock,
+   address, and shipping method) before confirming, since a few seconds can
+   pass between reviewing and clicking. If something in your cart no longer
+   has enough stock, you're sent back to your Cart page to fix it instead of
+   a confusing failure. If you click Place order more than once (or your
+   browser retries the request), you won't be double-charged or see a
+   different result the second time - you'll land on the same confirmation
+   either way.
+
+You'll then see a confirmation of your order details. **Real order
+placement, payment, and a confirmation email arrive in a later milestone**
+- nothing is actually charged or shipped yet, but everything about your
+order (address, shipping, items, and totals) has been fully validated.

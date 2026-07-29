@@ -1,0 +1,69 @@
+@model IReadOnlyList<ECommerceApp.Application.Addresses.Models.AddressDto>
+@{
+    ViewData["Title"] = "Your addresses";
+}
+
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h1 class="h3 mb-0">Your addresses</h1>
+    <a asp-action="Create" class="btn btn-primary">New address</a>
+</div>
+
+@if (TempData["Message"] is string message)
+{
+    <div class="alert alert-success">@message</div>
+}
+@if (TempData["Error"] is string error)
+{
+    <div class="alert alert-danger">@error</div>
+}
+
+@if (Model.Count == 0)
+{
+    <p class="text-muted">You haven't saved any addresses yet.</p>
+}
+else
+{
+    <div class="row row-cols-1 row-cols-md-2 g-3">
+        @foreach (var address in Model)
+        {
+            <div class="col">
+                <div class="card h-100 @(address.IsDefault ? "border-primary" : "")">
+                    <div class="card-body">
+                        <div class="d-flex justify-content-between align-items-start">
+                            <h2 class="h6 mb-1">
+                                @(string.IsNullOrEmpty(address.Label) ? address.FullName : address.Label)
+                            </h2>
+                            @if (address.IsDefault)
+                            {
+                                <span class="badge text-bg-primary">Default</span>
+                            }
+                        </div>
+                        <div class="text-muted small mb-2">@address.FullName &middot; @address.Phone</div>
+                        <address class="mb-3">
+                            @address.Line1<br />
+                            @if (!string.IsNullOrEmpty(address.Line2))
+                            {
+                                @address.Line2<br />
+                            }
+                            @address.City@(!string.IsNullOrEmpty(address.RegionCode) ? $", {address.RegionCode}" : "") @address.PostalCode<br />
+                            @address.CountryCode
+                        </address>
+                        <div class="d-flex gap-2 flex-wrap">
+                            <a asp-action="Edit" asp-route-id="@address.Id" class="btn btn-sm btn-outline-secondary">Edit</a>
+                            @if (!address.IsDefault)
+                            {
+                                <form asp-action="SetDefault" asp-route-id="@address.Id" method="post" class="d-inline">
+                                    <button type="submit" class="btn btn-sm btn-outline-primary">Set as default</button>
+                                </form>
+                            }
+                            <form asp-action="Delete" asp-route-id="@address.Id" method="post" class="d-inline"
+                                  onsubmit="return confirm('Delete this address?');">
+                                <button type="submit" class="btn btn-sm btn-outline-danger">Delete</button>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        }
+    </div>
+}

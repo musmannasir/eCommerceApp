@@ -31,10 +31,10 @@ public sealed class ShippingService : IShippingService
 
     public async Task<Result<ShippingMethodDto>> CreateAsync(CreateShippingMethodRequest request, CancellationToken cancellationToken = default)
     {
-        if (await NameConflictsAsync(request.CountryCode, request.RegionCode, request.Name, null, cancellationToken))
+        var conflict = await FindConflictAsync(request.CountryCode, request.RegionCode, request.Name, null, cancellationToken);
+        if (conflict is not null)
         {
-            return Result.Failure<ShippingMethodDto>(Error.Conflict(
-                "shipping_method.conflict", "A method with this name already exists for this country/region."));
+            return Result.Failure<ShippingMethodDto>(ConflictError(conflict));
         }
 
         var method = new ShippingMethod
@@ -66,10 +66,10 @@ public sealed class ShippingService : IShippingService
             return Result.Failure<ShippingMethodDto>(Error.NotFound("shipping_method.not_found", "Shipping method not found."));
         }
 
-        if (await NameConflictsAsync(request.CountryCode, request.RegionCode, request.Name, request.Id, cancellationToken))
+        var conflict = await FindConflictAsync(request.CountryCode, request.RegionCode, request.Name, request.Id, cancellationToken);
+        if (conflict is not null)
         {
-            return Result.Failure<ShippingMethodDto>(Error.Conflict(
-                "shipping_method.conflict", "A method with this name already exists for this country/region."));
+            return Result.Failure<ShippingMethodDto>(ConflictError(conflict));
         }
 
         method.Name = request.Name;
@@ -190,19 +190,33 @@ public sealed class ShippingService : IShippingService
         return new EstimatedShippingResult(options.Min(o => o.Cost), true);
     }
 
-    private async Task<bool> NameConflictsAsync(string countryCode, string? regionCode, string name, int? excludingId, CancellationToken cancellationToken)
+    /// <summary>
+    /// Looks up a conflicting row via <c>IgnoreQueryFilters()</c> - the
+    /// unique indexes backing this name/jurisdiction combination have
+    /// no <c>IsDeleted</c> filter (a soft-deleted row still occupies its
+    /// natural key at the database level), so a check that only looked at
+    /// non-deleted rows would say "no conflict" and then fail with a raw,
+    /// unhandled <see cref="DbUpdateException"/> at SaveChanges time for a
+    /// name that matches a previously-deleted method.
+    /// </summary>
+    private async Task<ShippingMethod?> FindConflictAsync(string countryCode, string? regionCode, string name, int? excludingId, CancellationToken cancellationToken)
     {
         var normalizedCountry = countryCode.ToUpper();
         var normalizedName = name.ToUpper();
         var normalizedRegion = string.IsNullOrWhiteSpace(regionCode) ? null : regionCode.ToUpper();
 
-        return await _dbContext.ShippingMethods.AnyAsync(m =>
+        return await _dbContext.ShippingMethods.IgnoreQueryFilters().FirstOrDefaultAsync(m =>
             m.CountryCode.ToUpper() == normalizedCountry &&
             m.Name.ToUpper() == normalizedName &&
             (m.RegionCode == null ? normalizedRegion == null : m.RegionCode.ToUpper() == normalizedRegion) &&
             m.Id != excludingId,
             cancellationToken);
     }
+
+    private static Error ConflictError(ShippingMethod conflict) => conflict.IsDeleted
+        ? Error.Conflict("shipping_method.conflict",
+            "A method with this name for this country/region was deleted - restore it from the Deleted list or choose a different name.")
+        : Error.Conflict("shipping_method.conflict", "A method with this name already exists for this country/region.");
 
     private async Task<Result> SetActiveAsync(int id, bool isActive, CancellationToken cancellationToken)
     {

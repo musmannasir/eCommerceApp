@@ -587,11 +587,46 @@ NULL`, and unique on `(CountryCode, RegionCode, Name)` filtered where
 `TaxRates`/`Carts`. `AuditableEntity` (soft delete + `RowVersion`), same
 reasoning as `TaxRates`/`Promotions`.
 
+## Addresses
+
+Addresses (Milestone 8.1) - a customer's saved address book, account-only
+like `WishlistItems`. A single, unified list per user, not split into
+separate shipping/billing tables - the customer picks one at checkout
+(Milestone 8.2). `CountryCode`/`RegionCode` deliberately match
+`TaxRates`/`ShippingMethods`' column shape, so a selected address can be
+passed straight into the Checkout Calculation Service (Milestone 7.4) once
+real checkout exists.
+
+| Column | Type | Nullable | Purpose |
+|---|---|---|---|
+| Id | int (identity) | No | Surrogate key |
+| UserId | nvarchar(450) | No | Plain string, not a navigation property - same reasoning as `WishlistItems`/`RecentlyViewedItems`/`RefreshTokens` |
+| Label | nvarchar(50) | Yes | Customer's own nickname for the address, e.g. "Home", "Work" |
+| FullName | nvarchar(200) | No | Recipient name - may differ from the account holder |
+| Phone | nvarchar(30) | No | Delivery contact number |
+| Line1 | nvarchar(200) | No | |
+| Line2 | nvarchar(200) | Yes | |
+| City | nvarchar(100) | No | |
+| RegionCode | nvarchar(10) | Yes | Sub-national code, same convention as `TaxRates`/`ShippingMethods` |
+| PostalCode | nvarchar(20) | No | |
+| CountryCode | nvarchar(2) | No | ISO 3166-1 alpha-2 |
+| IsDefault | bool | No | At most one per user - enforced by `AddressService`, not a DB constraint |
+| CreatedAtUtc | datetime2 | No | |
+| UpdatedAtUtc | datetime2 | No | |
+
+Indexes: non-unique on `UserId` (lookup only - `IsDefault`'s at-most-one
+invariant is a service-layer rule, not an index, since a customer's very
+first address is always forced to be the default before any comparison is
+possible). Plain `BaseEntity` - no soft delete or `RowVersion`, same
+reasoning as `WishlistItems`/`Carts`/`CartItems`: a customer who deletes
+their own address wants it gone, and there's no admin recycle bin for
+personal data.
+
 ## Soft delete and RowVersion
 
 Every table above (except the pure join tables `ProductTagMappings`,
 `ProductVariantAttributeValues`, `SupplierProducts`, `RecentlyViewedItems`,
-`Carts`, `CartItems`, and `WishlistItems`; and the immutable ledger tables
+`Carts`, `CartItems`, `WishlistItems`, and `Addresses`; and the immutable ledger tables
 `StockMovements`, `StockAdjustments`, `GoodsReceipts`, and `GoodsReceiptItems`) inherits `AuditableEntity`:
 `IsDeleted` (soft
 delete, globally filtered out of normal queries) and `RowVersion` - a real SQL

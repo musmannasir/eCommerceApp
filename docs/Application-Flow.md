@@ -72,8 +72,10 @@ wishlist. What's live today:
   detail pages don't exist until Milestone 5).
 - `GET /Cart` - the cart page: every line item (image, name, variant, SKU,
   unit price, quantity, line total), a stock/unavailable badge per line, a
-  Subtotal, Clear cart, and a disabled Checkout button (Milestone 8). A line
-  for a product that's since become unpublished/inactive/deleted stays
+  Subtotal, Clear cart, and (since Milestone 8.2) a real Checkout button
+  linking into the Checkout flow below - previously disabled from Milestone
+  6.1 through 8.1. A line for a product that's since become
+  unpublished/inactive/deleted stays
   visible (marked "No longer available") but is excluded from the Subtotal -
   only Remove works on it. Since Milestone 6.2, a line also shows a "price
   changed since you added this" note when the live price no longer matches
@@ -108,23 +110,31 @@ wishlist. What's live today:
 - The Cart page's summary also shows an **Estimated tax** line (Milestone
   7.2) when at least one tax rate is configured for the store's default
   jurisdiction - computed per line by `Product.TaxCategory` (non-taxable
-  products excluded) against pre-discount line totals, since there's no
-  real customer destination to calculate against yet (`Address` arrives in
-  Milestone 8.1) and allocating the cart's Promotion discount across lines
-  for tax purposes is the Checkout Calculation Service's job (Milestone
-  7.4). The line is hidden entirely - not shown as $0.00 - when no rate is
-  configured at all, so the store doesn't appear to be untaxed by default.
-  See `Architecture.md`'s Milestone 7.2 section.
+  products excluded), since there's no real customer destination to
+  calculate against yet (`Address` arrives in Milestone 8.1). As of
+  Milestone 7.4, this is computed against each line's **post-discount**
+  amount (via the Checkout Calculation Service, which allocates the cart's
+  Promotion discount across the lines it actually applies to), not the raw
+  line total. The line is hidden entirely - not shown as $0.00 - when no
+  rate is configured at all, so the store doesn't appear to be untaxed by
+  default. See `Architecture.md`'s Milestone 7.2 and 7.4 sections.
 - The Cart page's summary also shows an **Estimated shipping** line
   (Milestone 7.3), the cheapest active shipping method for the store's
   default jurisdiction - cost is a base rate plus a per-kg rate applied to
   the cart's total weight (from `Product.Weight`, treating a missing weight
-  as 0kg), waived entirely once a method's free-shipping threshold is met
-  by the (pre-discount) subtotal. Same estimate-only reasoning as tax - no
+  as 0kg), waived entirely once a method's free-shipping threshold is met.
+  As of Milestone 7.4, the threshold is checked against the **post-discount**
+  subtotal (via the Checkout Calculation Service), so a coupon that drops
+  the subtotal below the threshold correctly starts charging shipping
+  again instead of staying free. Same estimate-only reasoning as tax - no
   real destination until Milestone 8.1, no method-picker UI until Milestone
   8.2 - and hidden entirely rather than shown as $0.00/"Free" when no
-  method is configured at all. See `Architecture.md`'s Milestone 7.3
-  section.
+  method is configured at all. See `Architecture.md`'s Milestone 7.3 and
+  7.4 sections.
+- The Cart page's summary also shows an **Estimated total** line (Milestone
+  7.4), `Total + EstimatedTax + EstimatedShipping` - shown whenever either
+  tax or shipping is configured, still just an estimate for the same
+  reasons as its components. See `Architecture.md`'s Milestone 7.4 section.
 - `GET /Wishlist` (`[Authorize]`) - Milestone 6.3, account-only (no guest
   wishlist, unlike Cart). Every saved product, most-recently-added first,
   with a Remove button; a product that's since become unpublished/inactive/
@@ -141,6 +151,71 @@ wishlist. What's live today:
 - `POST /Wishlist/Remove` (`[Authorize]`) - explicit removal for the
   wishlist page's Remove button; idempotent, no error if the item's already
   gone.
+- `GET /Addresses` (`[Authorize]`) - Milestone 8.1, account-only address
+  book, linked from the Profile page ("Manage addresses"). Every saved
+  address, most-recently-updated first, each with Edit/Delete and a "Set as
+  default" button (hidden on whichever address is already the default).
+- `GET`/`POST /Addresses/Create`, `GET`/`POST /Addresses/Edit/{id}` -
+  classic server-rendered forms (not AJAX, unlike Cart/Wishlist), same
+  pattern as `AccountController`'s `ChangePassword`. A customer's first-ever
+  address is always saved as the default regardless of the form's checkbox;
+  marking any other address as the default clears the flag from whichever
+  address had it before. An `{id}` belonging to a different customer's
+  address returns a plain `404`, not their address's data. `Create` accepts
+  an optional `?returnUrl=` (Milestone 8.2 - Checkout redirects here when a
+  customer has no saved addresses yet, and lands back in Checkout once
+  they've saved one) with the same local-only open-redirect check as
+  `AccountController`'s `ReturnUrl`.
+- `POST /Addresses/Delete/{id}` - removes the address; deleting the current
+  default leaves no default at all rather than silently promoting another
+  address, matching the "don't guess on the customer's behalf" reasoning
+  Cart already applies to an invalidated promotion.
+- `POST /Addresses/SetDefault/{id}` - marks this address as the default,
+  clearing the flag from whichever address had it before.
+- `GET`/`POST /Checkout` (`[Authorize]`) - Milestone 8.2, step 1 of the
+  checkout flow: pick a shipping address from the customer's saved address
+  book (default pre-selected). Redirects to `/Cart` if the cart is empty, or
+  to `/Addresses/Create?returnUrl=/Checkout` if the customer has no saved
+  addresses yet. Since Milestone 8.3, this `GET` also redirects to `/Cart`
+  with an error if any cart item now exceeds available stock (re-checking
+  the same `CartItemDto.QuantityExceedsStock` signal the Cart page has
+  shown informationally since Milestone 6.2).
+- `GET`/`POST /Checkout/Shipping?addressId=` - step 2: pick a shipping
+  method from every option available for the chosen address's jurisdiction
+  (cheapest pre-selected), computed against the cart's post-discount
+  subtotal - the same Milestone 7.4 fix, now applied against a real
+  address instead of the store's default jurisdiction. An address that
+  doesn't belong to the current customer, or a jurisdiction with no
+  shipping methods configured at all, both redirect/resolve sensibly rather
+  than erroring.
+- `GET /Checkout/Review?addressId=&shippingMethodId=` - step 3: the real,
+  destination-based order total via `ICheckoutCalculationService
+  .CalculateAsync` (Milestone 7.4) - subtotal, discount, tax, shipping, and
+  grand total, all computed against the chosen address and shipping
+  method, not an estimate. A stale or tampered `shippingMethodId` (doesn't
+  match any option for this address) redirects back to the Shipping step.
+  Since Milestone 8.3, this step also renders a fresh, single-use
+  idempotency token (a hidden field on the "Place order" form) and the
+  button is enabled.
+- `POST /Checkout/PlaceOrder` (Milestone 8.3) - re-runs the full validation
+  battery (cart availability, stock sufficiency, address ownership,
+  shipping-method availability) one last time before submission, since any
+  of it can change in the time between viewing Review and clicking the
+  button; a stock or stale-shipping-method failure redirects back to
+  `/Cart` or the Shipping step respectively, same as the equivalent
+  `GET`-time guards. On success, caches the validated result (keyed by the
+  submitted idempotency token, 15-minute `IMemoryCache` TTL - see
+  `Architecture.md`) and redirects to `/Checkout/Confirmation?key=`.
+  Resubmitting the same token (double-click, back button, network retry)
+  replays the original cached outcome instead of re-validating - so a
+  submission that already succeeded can't be turned into a failure by
+  something changing afterward. `Order` entities still don't exist until
+  Milestone 9.1, so nothing is actually placed - see `Confirmation` below.
+- `GET /Checkout/Confirmation?key=` (Milestone 8.3) - reads the cached
+  result for the given idempotency token; explicit that "your order
+  details have been validated" is not a real placed order ("nothing has
+  been charged or shipped yet"). A missing/expired/foreign token redirects
+  back to `/Checkout` with a "checkout session has expired" message.
 - `GET /Account/Register`, `POST /Account/Register` - creates the account
   (assigned the `Customer` role), signs the user in immediately, then folds
   any guest cart into the new account (Milestone 6.2 - see

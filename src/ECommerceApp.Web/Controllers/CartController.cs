@@ -133,5 +133,5 @@ public class CartController : Controller
         return Json(cart);
     }
 
-    private static CartDto EmptyCart => new(null, Array.Empty<CartItemDto>(), 0, 0, null, null, 0, 0, 0, false, 0, false);
+    private static CartDto EmptyCart => new(null, Array.Empty<CartItemDto>(), 0, 0, null, null, 0, 0, 0, false, 0, false, 0);
 }

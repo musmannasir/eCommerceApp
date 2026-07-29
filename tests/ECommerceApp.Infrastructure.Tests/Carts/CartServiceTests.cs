@@ -600,6 +600,139 @@ public class CartServiceTests : IDisposable
         result.Value.EstimatedShipping.Should().Be(13m); // 5 + 2*(3+1)
     }
 
+    [Fact]
+    public async Task Applying_a_coupon_reduces_the_taxable_amount_the_estimated_tax_is_computed_against()
+    {
+        var product = await SeedProductAsync(price: 100m);
+        await _harness.TaxService.CreateAsync(new CreateTaxRateRequest("US", "CA", "Standard", 10m, true));
+        var owner = GuestOwner();
+        await _harness.CartService.AddItemAsync(owner, new AddCartItemRequest(product.Id, null, 1));
+        await SeedPromotionAsync("SAVE10", 10m);
+
+        var result = await _harness.CartService.ApplyCouponAsync(owner, "SAVE10");
+
+        result.Value.PromotionDiscount.Should().Be(10m);
+        result.Value.EstimatedTax.Should().Be(9m); // 10% of the post-discount 90, not the pre-discount 100
+    }
+
+    [Fact]
+    public async Task Applying_a_coupon_reduces_the_subtotal_the_free_shipping_threshold_is_checked_against()
+    {
+        var product = await SeedProductAsync(price: 100m, weight: 2m);
+        await _harness.ShippingService.CreateAsync(new CreateShippingMethodRequest(
+            "Standard", null, "US", "CA", 5m, 1m, FreeShippingThreshold: 90m, null, null, 0, true));
+        var owner = GuestOwner();
+        await _harness.CartService.AddItemAsync(owner, new AddCartItemRequest(product.Id, null, 1));
+        await SeedPromotionAsync("SAVE10", 10m);
+
+        var result = await _harness.CartService.ApplyCouponAsync(owner, "SAVE10");
+
+        // Pre-discount subtotal (100) would clear the 90 threshold too, but the
+        // post-discount subtotal (90) exactly meeting it proves it's the
+        // post-discount amount driving the free-shipping check.
+        result.Value.EstimatedShipping.Should().Be(0m);
+    }
+
+    [Fact]
+    public async Task EstimatedGrandTotal_is_the_discounted_total_plus_estimated_tax_and_shipping()
+    {
+        var product = await SeedProductAsync(price: 100m, weight: 2m);
+        await _harness.TaxService.CreateAsync(new CreateTaxRateRequest("US", "CA", "Standard", 10m, true));
+        await _harness.ShippingService.CreateAsync(new CreateShippingMethodRequest(
+            "Standard", null, "US", "CA", 5m, 1m, null, null, null, 0, true));
+        var owner = GuestOwner();
+        await _harness.CartService.AddItemAsync(owner, new AddCartItemRequest(product.Id, null, 1));
+        await SeedPromotionAsync("SAVE10", 10m);
+
+        var result = await _harness.CartService.ApplyCouponAsync(owner, "SAVE10");
+
+        // Total 90 + tax 9 (10% of 90) + shipping 7 (5 + 1*2) = 106.
+        result.Value.EstimatedTax.Should().Be(9m);
+        result.Value.EstimatedShipping.Should().Be(7m);
+        result.Value.EstimatedGrandTotal.Should().Be(106m);
+    }
+
+    [Fact]
+    public async Task EstimatedGrandTotal_with_no_promotion_tax_or_shipping_configured_equals_the_total()
+    {
+        var product = await SeedProductAsync(price: 100m);
+        var owner = GuestOwner();
+
+        var result = await _harness.CartService.AddItemAsync(owner, new AddCartItemRequest(product.Id, null, 1));
+
+        result.Value.EstimatedGrandTotal.Should().Be(result.Value.Total);
+    }
+
+    [Fact]
+    public async Task GetCheckoutInputAsync_with_no_cart_at_all_is_rejected_as_empty()
+    {
+        var result = await _harness.CartService.GetCheckoutInputAsync(GuestOwner());
+
+        result.IsFailure.Should().BeTrue();
+        result.FirstError.Code.Should().Be("cart.empty");
+    }
+
+    [Fact]
+    public async Task GetCheckoutInputAsync_with_an_empty_cart_is_rejected_as_empty()
+    {
+        var product = await SeedProductAsync();
+        var owner = GuestOwner();
+        var added = await _harness.CartService.AddItemAsync(owner, new AddCartItemRequest(product.Id, null, 1));
+        await _harness.CartService.RemoveItemAsync(owner, added.Value.Items[0].Id);
+
+        var result = await _harness.CartService.GetCheckoutInputAsync(owner);
+
+        result.IsFailure.Should().BeTrue();
+        result.FirstError.Code.Should().Be("cart.empty");
+    }
+
+    [Fact]
+    public async Task GetCheckoutInputAsync_with_only_unavailable_lines_is_rejected_as_empty()
+    {
+        var product = await SeedProductAsync(price: 50m);
+        var owner = GuestOwner();
+        await _harness.CartService.AddItemAsync(owner, new AddCartItemRequest(product.Id, null, 1));
+        product.IsActive = false;
+        await _harness.DbContext.SaveChangesAsync();
+
+        var result = await _harness.CartService.GetCheckoutInputAsync(owner);
+
+        result.IsFailure.Should().BeTrue();
+        result.FirstError.Code.Should().Be("cart.empty");
+    }
+
+    [Fact]
+    public async Task GetCheckoutInputAsync_returns_a_checkout_line_per_available_item()
+    {
+        var product = await SeedProductAsync(name: "Widget", price: 25m, weight: 2m);
+        var owner = GuestOwner();
+        await _harness.CartService.AddItemAsync(owner, new AddCartItemRequest(product.Id, null, 3));
+
+        var result = await _harness.CartService.GetCheckoutInputAsync(owner);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Lines.Should().ContainSingle();
+        result.Value.Lines[0].ProductId.Should().Be(product.Id);
+        result.Value.Lines[0].LineTotal.Should().Be(75m);
+        result.Value.Lines[0].TotalWeight.Should().Be(6m); // 2kg * 3
+        result.Value.AppliedPromotionId.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task GetCheckoutInputAsync_returns_the_resolved_applied_promotion_id()
+    {
+        var product = await SeedProductAsync(price: 100m);
+        var owner = GuestOwner();
+        await _harness.CartService.AddItemAsync(owner, new AddCartItemRequest(product.Id, null, 1));
+        var promotion = await SeedPromotionAsync("SAVE10", 10m);
+        await _harness.CartService.ApplyCouponAsync(owner, "SAVE10");
+
+        var result = await _harness.CartService.GetCheckoutInputAsync(owner);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.AppliedPromotionId.Should().Be(promotion.Id);
+    }
+
     private async Task<PromotionDto> SeedPromotionAsync(string couponCode, decimal percentageDiscount)
     {
         var result = await _harness.PromotionService.CreateAsync(new CreatePromotionRequest(

@@ -81,6 +81,32 @@ public class TaxServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task Creating_a_rate_matching_a_deleted_ones_country_region_and_category_is_rejected_with_a_restore_hint()
+    {
+        var created = await _harness.TaxService.CreateAsync(new CreateTaxRateRequest("US", null, "Standard", 8.25m, true));
+        await _harness.TaxService.DeleteAsync(created.Value.Id);
+
+        var result = await _harness.TaxService.CreateAsync(new CreateTaxRateRequest("US", null, "Standard", 5m, true));
+
+        result.IsFailure.Should().BeTrue();
+        result.FirstError.Type.Should().Be(ErrorType.Conflict);
+        result.FirstError.Message.Should().Contain("deleted");
+    }
+
+    [Fact]
+    public async Task Updating_a_rate_to_match_a_deleted_ones_country_region_and_category_is_rejected()
+    {
+        var deleted = await _harness.TaxService.CreateAsync(new CreateTaxRateRequest("US", null, "Standard", 8.25m, true));
+        await _harness.TaxService.DeleteAsync(deleted.Value.Id);
+        var other = await _harness.TaxService.CreateAsync(new CreateTaxRateRequest("US", "CA", "Standard", 5m, true));
+
+        var result = await _harness.TaxService.UpdateAsync(new UpdateTaxRateRequest(other.Value.Id, "US", null, "Standard", 9.5m, true));
+
+        result.IsFailure.Should().BeTrue();
+        result.FirstError.Type.Should().Be(ErrorType.Conflict);
+    }
+
+    [Fact]
     public async Task An_exact_region_match_takes_precedence_over_a_country_wide_rate()
     {
         await _harness.TaxService.CreateAsync(new CreateTaxRateRequest("US", null, "Standard", 5m, true));

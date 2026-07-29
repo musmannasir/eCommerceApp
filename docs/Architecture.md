@@ -849,6 +849,23 @@ have had no natural home among Catalog/Inventory/Marketing) - a
 deliberately forward-looking structural choice, since Milestone 7.3's
 Shipping Rates admin UI will have an obvious place to land next to it.
 
+**Bug found and fixed post-milestone (during Milestone 8.3's manual
+checkout verification)**: `RateConflictsAsync`'s duplicate check queried
+through the normal `DbSet`, which respects the global soft-delete filter -
+so a previously-deleted rate's `(CountryCode, RegionCode, TaxCategory)`
+combination looked "free" to the app. But the unique indexes backing that
+combination (`IX_TaxRates_CountryCode_TaxCategory` /
+`IX_TaxRates_CountryCode_RegionCode_TaxCategory`) have no `IsDeleted`
+filter - a soft-deleted row still permanently occupies its natural key at
+the database level. The result: creating a rate that matched a previously-
+deleted one passed the app's own check, then failed with a raw, unhandled
+`DbUpdateException` at `SaveChangesAsync` - a confusing 500 instead of
+either succeeding or explaining what actually happened. Fixed by having the
+conflict check itself use `IgnoreQueryFilters()` (matching what the
+database actually enforces) and returning a specific message pointing the
+admin at the Deleted list when the conflict is with a soft-deleted row,
+rather than the generic "already exists" message.
+
 ## Shipping (Milestone 7.3)
 
 **Same brief-text gap as Milestones 6.1-7.2** - scope was agreed with the
@@ -933,6 +950,323 @@ per test.
 **Admin CRUD reuses `Policies.CanManageCatalog`** and sits in the
 "Checkout" nav section (introduced in Milestone 7.2) next to Tax Rates -
 `ShippingMethodsController` mirrors `TaxRatesController`'s shape exactly.
+
+**Bug found and fixed post-milestone (during Milestone 8.3's manual
+checkout verification)**: the same soft-delete-vs-unique-index mismatch
+described in Tax service's section above applies here too -
+`NameConflictsAsync` didn't see soft-deleted rows, but
+`IX_ShippingMethods_CountryCode_Name`/`IX_ShippingMethods_CountryCode_RegionCode_Name`
+still enforce uniqueness against them, so recreating a method under a
+previously-deleted name+jurisdiction threw an unhandled `DbUpdateException`
+instead of succeeding or explaining why. Same fix: the conflict check now
+uses `IgnoreQueryFilters()` and returns a message pointing at the Deleted
+list when the conflict is with a soft-deleted row.
+
+## Checkout Calculation Service (Milestone 7.4)
+
+**Same brief-text gap as Milestones 6.1-7.3** - scope was agreed with the
+user as reasonable conventions implied by the name.
+
+**Closes the exact gap Tax and Shipping each explicitly deferred to this
+milestone.** Both M7.2's "Estimated tax" and M7.3's "Estimated shipping"
+lines were computed against the store's **pre-discount** line totals/
+subtotal, with an explicit note that allocating a cart-level Promotion
+discount across lines for tax/shipping purposes was this milestone's job.
+`ICheckoutCalculationService` is the orchestrator `IPricingService` already
+plays for a single product's price, but for a whole cart: it composes
+`IPromotionService` + `ITaxService` + `IShippingService` into one final
+total, computed against the **post-discount** amount.
+
+**`PromotionApplicationDto` gained `LineDiscounts`** - one entry per input
+line, same order, summing exactly to `DiscountAmount` (a line outside the
+promotion's scope gets 0). Computed inside `PromotionService.Evaluate` via
+a rounding-safe proportional allocation: each eligible line gets a share
+proportional to its fraction of the eligible amount, except the *last*
+eligible line, which takes the remainder instead of its own rounded share -
+guaranteeing the allocations always sum to exactly the discount amount
+regardless of rounding (the same "largest remainder" trick, applied at
+allocation time rather than after the fact). This lets the Checkout
+Calculation Service know exactly how much of a cart-level discount applies
+to each line without duplicating the scope-matching logic
+(`EntireOrder`/`Category`/`Brand`/`Product`) that already lives in
+`PromotionService`.
+
+**Same "estimate only" scope boundary as Tax/Shipping, for the same
+reason** - no real destination exists until Milestone 8.1's Addresses, and
+no checkout UI exists until Milestone 8.2. `ICheckoutCalculationService`
+splits the same way `ITaxService`/`IShippingService` did:
+- `CalculateAsync(lines, appliedPromotionId, taxCountryCode, taxRegionCode,
+  shippingCountryCode, shippingRegionCode, selectedShippingMethodId)` is
+  destination-explicit - it sums per-line tax via
+  `ITaxService.CalculateTaxAsync` and picks the cheapest
+  `IShippingService.GetAvailableShippingOptionsAsync` option unless one is
+  explicitly selected (defaults to `null`, since there's no method-picker
+  UI yet). Ready for Milestone 8.2's checkout, but has no real consumer
+  yet.
+- `CalculateEstimatedAsync(lines, appliedPromotionId)` is the store-default-
+  jurisdiction convenience wrapper that now powers the Cart page - it
+  reuses `ITaxService.CalculateEstimatedTaxAsync`/
+  `IShippingService.CalculateEstimatedShippingAsync` directly (no new
+  config-reading duplication needed) by simply passing **post-discount**
+  amounts into them: each taxable line's `LineTotal - lineDiscounts[i]` for
+  tax, and the post-discount subtotal for shipping's free-threshold check.
+
+**Never fails - an invalid or missing applied promotion is simply treated
+as "no discount," a pure calculator with no side effects**, mirroring
+`IPricingService`'s design. `CheckoutCalculationService`'s internal
+`ResolveDiscountAsync` calls `IPromotionService.ValidateAppliedPromotionAsync`
+itself to get `LineDiscounts` for allocation - a deliberate, accepted minor
+inefficiency (`CartService.ResolveAppliedPromotionAsync` already validated
+the same promotion once for its own display/clearing purposes, so this is a
+second, redundant read-only query) in favor of keeping
+`CheckoutCalculationService` correct standalone rather than coupling its
+public contract to a caller's pre-computed discount. The caller (e.g.
+`CartService`) remains solely responsible for actually clearing an invalid
+promotion from persisted state - this service only calculates.
+
+**`CartDto` gained `EstimatedGrandTotal`** (`Total + EstimatedTax +
+EstimatedShipping`, equivalently `CheckoutCalculationResult.GrandTotal`) -
+still just an estimate, same reasoning as the two components it combines.
+`CartService.BuildCartDtoAsync` now calls
+`ICheckoutCalculationService.CalculateEstimatedAsync` instead of
+`ITaxService`/`IShippingService` directly; `Total`'s existing meaning
+(`Subtotal - PromotionDiscount`, no tax/shipping) is unchanged.
+
+**Manually verified end-to-end**: a coupon that drops the cart's subtotal
+from above a configured free-shipping threshold to below it now correctly
+starts charging shipping instead of incorrectly staying free, and the
+estimated tax line drops to reflect the post-discount amount instead of
+staying flat - exactly the bug the pre-M7.4 architecture had baked in by
+design (documented, not accidental, in M7.2/M7.3's own notes above).
+
+## Addresses (Milestone 8.1)
+
+**Same brief-text gap as Milestones 6.1-7.4** - scope was agreed with the
+user as reasonable conventions implied by the name.
+
+**A single, unified address book, not separate shipping/billing entity
+types.** `Address` holds one flat record per saved address; a customer picks
+whichever one they want at checkout (Milestone 8.2) rather than the app
+enforcing a shipping-vs-billing split up front. This is a deliberate v1
+simplification - real stores often do split them - but nothing here blocks
+adding an `AddressType` dimension later if a later milestone needs it.
+
+**`CountryCode`/`RegionCode` deliberately mirror `TaxRate`/`ShippingMethod`'s
+shape exactly** (same field names, same "code, not free-text region name"
+convention) - so once Milestone 8.2 wires up real checkout, a selected
+`Address` can be passed straight into
+`ICheckoutCalculationService.CalculateAsync` (Milestone 7.4) as
+`taxCountryCode`/`taxRegionCode`/`shippingCountryCode`/`shippingRegionCode`
+with zero translation. `City`/`PostalCode`/`Line1`/`Line2` stay human-entered
+free text, since nothing needs to match or filter on them the way
+Tax/Shipping match on country/region codes.
+
+**Plain `BaseEntity`, no soft delete or `RowVersion`** - the same convention
+`Cart`/`CartItem`/`WishlistItem` already established for customer-owned
+personal records, as opposed to `AuditableEntity`'s recoverable/audited shape
+used for admin-managed catalog/business records (Category, Promotion,
+TaxRate, etc.). A customer who deletes their own address wants it gone; there
+is no admin recycle bin for personal data, and no concurrent-edit scenario
+worth guarding against for a single user's own address book.
+
+**`IsDefault` is a service-layer invariant, not a DB constraint** - the same
+choice this session made for Cart's single-applied-promotion rule. Two rules
+`AddressService` enforces that a unique index couldn't express on its own:
+- A customer's very first saved address is *always* the default, regardless
+  of what the create request's `IsDefault` flag says - there's nothing to
+  compare it against yet, and leaving a customer with zero default addresses
+  immediately after saving their first one would be a confusing empty state.
+- Deleting the current default address leaves **no** default at all, rather
+  than silently promoting another address to fill the gap - the customer
+  picks the new default explicitly via "Set as default," the same "don't
+  guess on the customer's behalf" reasoning `CartService` applies to an
+  invalidated promotion (clear it, don't substitute something else for it).
+
+**Account-only, like Wishlist - every `IAddressService` method scopes its
+query by `UserId`.** An id that exists but belongs to a different user
+returns `NotFound`, identical to an id that doesn't exist at all - never
+`Forbidden` - so a customer probing address ids can't learn whether *any*
+address exists at that id, only whether one exists that's theirs. Verified
+over a real HTTP round trip (`AddressFlowTests`), not just in-process:
+another customer's `Edit`/`Delete` requests against someone else's address
+id are checked to actually fail at the real controller/service boundary, not
+just asserted against the service directly.
+
+**Classic server-rendered MVC forms, not AJAX** - unlike Cart/Wishlist's
+single-value toggle actions (quantity, coupon code, wishlist heart), an
+address has many fields, so `AddressesController`/`Views/Addresses` mirror
+`AccountController`'s `ChangePassword` form pattern (GET renders a
+`ViewModel` with `DataAnnotations`, POST validates via `ModelState` first and
+the `Application` layer's FluentValidation validators second, redirects with
+`TempData` on success) rather than Cart/Wishlist's JSON-endpoint-plus-header-
+CSRF-token pattern. Linked from the Profile page ("Manage addresses") next to
+"Change password," not the header nav - an infrequent action, unlike
+Cart/Wishlist's frequent, badge-worthy visibility.
+
+**Same "add cleanup for every new table the same milestone it's introduced"
+reminder from Milestones 6.3/7.3, caught proactively this time**:
+`Address.UserId` is a plain string field, not a real database foreign key to
+`AspNetUsers` - Domain has no dependency on Infrastructure's `ApplicationUser`
+(the same reason `WishlistItem.UserId` and `Cart.UserId` are also plain
+strings) - so deleting a test user does **not** cascade-delete their
+addresses the way `WishlistItem`'s real FK-to-`Product` cascade incidentally
+does. `TestDatabase.ResetAsync` now explicitly clears `Addresses` before this
+could cause the exact cross-run leftover-row collision Milestone 7.3's
+`ShippingMethod` bug already demonstrated once.
+
+## Checkout Flow UI (Milestone 8.2)
+
+**Same brief-text gap as Milestones 6.1-8.1** - scope was agreed with the
+user as reasonable conventions implied by the name.
+
+**Order placement itself is explicitly out of scope.** `Order` entities
+don't exist until Milestone 9.1, so there is nothing for a "place order"
+action to actually create yet. This milestone builds the real checkout
+*flow* - address selection, shipping method selection, and a final review
+with real destination-based totals - but Review's "Place order" button
+stays disabled with an explanatory tooltip, exactly the placeholder pattern
+the Cart page's own Checkout button used from Milestone 6.1 until this
+milestone replaced it with a real link into this flow.
+
+**A stateless, three-step flow carried entirely via query string** -
+`CheckoutController`'s `Index` (address), `Shipping` (`?addressId=`), and
+`Review` (`?addressId=&shippingMethodId=`) - rather than session or
+TempData-backed wizard state. Every step re-derives everything it needs
+(the cart's lines, the address book, the available shipping options) from
+its query-string inputs, so there is no server-side state to keep in sync,
+expire, or leak across tabs; the tradeoff is a full page load between
+steps rather than a single-page wizard, which matches every other
+classic-MVC-form flow in the app.
+
+**Account-only (`[Authorize]`), a direct consequence of Address's own
+scope decision.** Address (Milestone 8.1) has no guest concept, so there is
+nothing for a guest to select at checkout - a guest with items in their
+cart who clicks Checkout is redirected to log in like any other
+`[Authorize]` page, and their guest cart already merges into their account
+on login (Milestone 6.2's cart-merge flow), so nothing is lost by the
+detour.
+
+**One address serves both the tax and shipping jurisdiction** - consistent
+with Address's "no shipping/billing split" decision (Milestone 8.1) - so
+this milestone is `ICheckoutCalculationService.CalculateAsync`'s (Milestone
+7.4) first real, destination-explicit consumer. Its store-default-
+jurisdiction convenience wrapper, `CalculateEstimatedAsync`, is unchanged
+and remains what the Cart page's "Estimated tax"/"Estimated shipping"
+lines use - those stay honest estimates precisely because Checkout is
+where the real, address-specific numbers now live.
+
+**`ICartService` gained `GetCheckoutInputAsync`**, returning the cart's
+currently-available lines (as `CheckoutLineDto`) plus the resolved applied
+promotion id - exactly the input `CalculateAsync` needs. Rather than
+duplicating the "build per-line DTOs from Cart+Product data" logic a third
+time (it already existed once inline in `BuildCartDtoAsync` and once in
+`BuildPromotionLinesAsync`), `CartService` was refactored to share one
+`ComputeAvailableLines` helper across all three call sites - a
+`Result`-returning method that fails with `"cart.empty"` when there is
+nothing available to check out, the same error code `ApplyCouponAsync`
+already used for the equivalent case.
+
+**Guard rails redirect to the right earlier step rather than erroring**:
+- An empty cart redirects to the Cart page.
+- A customer with items but no saved address redirects to
+  `Addresses/Create` - which gained `returnUrl` support (mirroring
+  `AccountController`'s `ReturnUrl` pattern, including the same
+  `Url.IsLocalUrl` open-redirect check) specifically so saving their first
+  address lands them back in Checkout instead of the address book's own
+  index page.
+- An address id that doesn't belong to the current customer redirects back
+  to address selection (`IAddressService.GetByIdAsync`'s existing
+  ownership-scoped `NotFound` already makes this fall out for free - no new
+  authorization logic needed).
+- A `shippingMethodId` that doesn't match any option available for the
+  selected address's jurisdiction - whether from URL tampering or because
+  the cart/address changed between steps - redirects back to the Shipping
+  step. This reuses `CalculateAsync`'s existing `ShippingRateConfigured =
+  false` signal (previously only meaningful for "nothing configured for
+  this jurisdiction at all") rather than adding a second validation path;
+  both cases converge on the same, already-correct Shipping page, which
+  either lists real options to choose from or explains that none exist for
+  this address.
+
+**Manually verified end-to-end** against a real destination (not the Cart
+page's store-default-jurisdiction estimate): address -> shipping -> review
+computing the correct subtotal/tax/shipping/total, and - critically - a
+coupon discount correctly reducing both the taxed amount and the shipping
+free-threshold check's post-discount subtotal, the exact post-discount
+behavior Milestone 7.4 built `CalculateAsync` to guarantee.
+
+## Server-side revalidation & idempotency (Milestone 8.3)
+
+**Same brief-text gap as Milestones 6.1-8.2** - scope was agreed with the
+user as a concrete, non-speculative reading of the milestone name, given it
+sits **before `Order` entities exist** (Milestone 9.1) and therefore has no
+real order row to revalidate against or make idempotent yet.
+
+**Server-side revalidation was almost entirely already true by
+construction.** Every earlier milestone in this app deliberately computes
+price, promotion, tax, and shipping fresh from live data on every read
+rather than trusting anything the client sends back - `CalculateAsync`
+(Milestone 7.4) re-derives the whole total from the cart's current contents
+and the address's current jurisdiction every single time it's called, with
+no client-supplied total ever trusted. The one genuine gap: **stock
+sufficiency was never checked inside the Checkout flow itself** - only
+informationally flagged on the Cart page via `CartItemDto.QuantityExceedsStock`
+(Milestone 6.2), which a customer could silently ignore and proceed anyway.
+`CheckoutController` now guards against this at two points using that exact
+same existing data (zero new Infrastructure/Application work):
+- `Index` GET - a customer whose cart now exceeds available stock (an item
+  they added earlier has since sold out or dropped below their quantity)
+  is redirected to the Cart page with an explanatory error, the same
+  guard-rail pattern Milestone 8.2 already used for an empty cart.
+- `PlaceOrder` POST - the same check runs again immediately before final
+  submission, since stock can change in the seconds between viewing Review
+  and clicking Place order.
+
+**Idempotency is a fresh, single-use `IMemoryCache` token, not a new
+persistent table.** A GUID is generated every time the Review page renders
+(`CheckoutReviewPageViewModel.IdempotencyKey`) and round-tripped as a hidden
+form field alongside the `PlaceOrder` submission. `PlaceOrder` checks the
+cache first (`IMemoryCache`, already registered for category nav caching,
+15-minute TTL) - if the same key was already used successfully, it redirects
+straight to the cached `Confirmation` result instead of re-running
+validation, so a double-click, back-button resubmit, or network retry can
+never re-validate (and potentially re-fail, e.g. if stock depleted in the
+meantime) a submission that already succeeded. Deliberately **not** a real
+idempotency table keyed in SQL: that shape belongs to Milestone 9.1's actual
+`Order` creation, and building it now against nothing but a cached DTO would
+be speculative. **Known, documented limitation**: `IMemoryCache` is
+single-instance - a multi-instance deployment would need a distributed cache
+or a real backing table for this to keep working; not silently glossed over,
+just out of scope for a milestone with no `Order` to persist.
+
+**`PlaceOrder` re-runs the full validation battery** - cart availability
+(`GetCheckoutInputAsync`), stock sufficiency, address ownership, and
+shipping-method availability (`CalculateAsync`'s `ShippingRateConfigured`
+signal, same as Milestone 8.2's Review step) - and only on success caches
+the result and redirects to a new `GET /Checkout/Confirmation?key=` page. A
+stale/tampered `shippingMethodId` redirects back to the Shipping step,
+exactly like Milestone 8.2's existing guard. `Confirmation` is explicit that
+nothing has actually been placed yet ("Your order details have been
+validated... nothing has been charged or shipped yet") since `Order`
+entities don't exist until Milestone 9.1; a missing/expired/foreign cache
+entry redirects back to `Index` with a "checkout session has expired"
+message rather than erroring.
+
+**Bug found and fixed along the way**: `Views/Cart/Index.cshtml` never
+rendered `TempData["Error"]`/`TempData["Message"]` at all - it only had a
+hidden, JS-controlled `<div>` for AJAX errors from the Cart page's own
+in-page actions. This meant the new stock-guard redirects from Checkout
+back to Cart were silently swallowed (the error was set but never
+displayed) until this milestone added the same banner pattern every other
+page (`Addresses`, `Checkout`) already used.
+
+**Manually verified**: the happy path end-to-end (address -> shipping ->
+review -> place order -> confirmation, with the confirmation page showing
+the same real destination-based totals Review computed); resubmitting the
+same idempotency key after deliberately depleting stock still replays the
+original successful confirmation instead of re-validating and failing; and
+a stale/tampered shipping method id on submission correctly redirects back
+to the Shipping step.
 
 ## Framework version note
 

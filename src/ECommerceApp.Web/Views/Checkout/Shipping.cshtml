@@ -1,0 +1,84 @@
+@model ECommerceApp.Web.Models.Checkout.CheckoutShippingPageViewModel
+@{
+    ViewData["Title"] = "Checkout - Shipping";
+}
+
+<h1 class="h3 mb-1">Checkout</h1>
+<p class="text-muted">Step 2 of 3 - Shipping method</p>
+
+@if (TempData["Error"] is string error)
+{
+    <div class="alert alert-danger">@error</div>
+}
+
+<div class="row">
+    <div class="col-lg-8">
+        <div class="card mb-3">
+            <div class="card-body d-flex justify-content-between align-items-start">
+                <div>
+                    <div class="text-muted small">Shipping to</div>
+                    <strong>@(string.IsNullOrEmpty(Model.Address.Label) ? Model.Address.FullName : Model.Address.Label)</strong>
+                    <div class="small">
+                        @Model.Address.Line1, @Model.Address.City@(!string.IsNullOrEmpty(Model.Address.RegionCode) ? $", {Model.Address.RegionCode}" : "") @Model.Address.PostalCode, @Model.Address.CountryCode
+                    </div>
+                </div>
+                <a asp-action="Index" class="btn btn-sm btn-outline-secondary">Change address</a>
+            </div>
+        </div>
+
+        @if (Model.Options.Count == 0)
+        {
+            <div class="alert alert-warning">
+                No shipping options are available for this address. Please choose a different address.
+            </div>
+        }
+        else
+        {
+            <form asp-action="Shipping" method="post">
+                <input type="hidden" name="addressId" value="@Model.AddressId" />
+                @foreach (var option in Model.Options)
+                {
+                    <div class="card mb-2">
+                        <div class="card-body">
+                            <div class="form-check">
+                                <input class="form-check-input" type="radio" name="shippingMethodId" id="shipping-@option.ShippingMethodId"
+                                       value="@option.ShippingMethodId" checked="@(option.ShippingMethodId == Model.SelectedShippingMethodId)" />
+                                <label class="form-check-label w-100 d-flex justify-content-between" for="shipping-@option.ShippingMethodId">
+                                    <span>
+                                        <strong>@option.Name</strong>
+                                        @if (!string.IsNullOrEmpty(option.Description))
+                                        {
+                                            <div class="text-muted small">@option.Description</div>
+                                        }
+                                        @if (option.EstimatedDeliveryDaysMin.HasValue)
+                                        {
+                                            <div class="text-muted small">
+                                                @option.EstimatedDeliveryDaysMin-@(option.EstimatedDeliveryDaysMax ?? option.EstimatedDeliveryDaysMin) business days
+                                            </div>
+                                        }
+                                    </span>
+                                    <span>@(option.Cost == 0 ? "Free" : option.Cost.ToString("0.00"))</span>
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+                }
+
+                <div class="d-flex justify-content-between mt-3">
+                    <a asp-action="Index" class="btn btn-outline-secondary">Back</a>
+                    <button type="submit" class="btn btn-primary">Continue to review</button>
+                </div>
+            </form>
+        }
+    </div>
+    <div class="col-lg-4">
+        <div class="card">
+            <div class="card-body">
+                <h2 class="h6">Order summary</h2>
+                <div>@Model.ItemCount item@(Model.ItemCount == 1 ? "" : "s")</div>
+                <div>Subtotal: <strong>@Model.Subtotal.ToString("0.00")</strong></div>
+                <div class="text-muted small mt-2">Tax and final total shown on the next step.</div>
+            </div>
+        </div>
+    </div>
+</div>
