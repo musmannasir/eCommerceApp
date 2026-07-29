@@ -14,8 +14,9 @@
 
 <p class="text-muted small">
     Used to estimate tax on the Cart page against the store's default jurisdiction
-    (<code>Store:DefaultTaxCountryCode</code>/<code>Store:DefaultTaxRegionCode</code>) - real,
-    destination-based tax calculation arrives with Checkout (Milestones 7.4/8).
+    (<code>Store:DefaultTaxCountryCode</code>/<code>Store:DefaultTaxRegionCode</code>). Real,
+    destination-based tax calculation against a customer's saved address now happens in the
+    Checkout flow - order placement itself arrives in Milestone 9.1.
 </p>
 
 @if (TempData["Message"] is string message)

@@ -65,19 +65,18 @@ public record CartItemDto(
 /// <summary>
 /// AppliedCouponCode/AppliedPromotionName/PromotionDiscount are null/zero when
 /// no promotion is applied. Subtotal keeps its pre-discount meaning; Total is
-/// Subtotal minus PromotionDiscount (Milestone 7.1). EstimatedTax (Milestone
-/// 7.2) is computed against the store's configured default tax jurisdiction,
-/// not a real customer destination (no Address entity exists until Milestone
-/// 8.1) - and against pre-discount line totals, since allocating a
-/// cart-level discount across lines for tax purposes is the Checkout
-/// Calculation Service's job (Milestone 7.4), not this estimate's.
-/// EstimatedTaxRateConfigured is false when no tax rate at all has been set
-/// up for the store's default jurisdiction, distinct from a genuine 0% rate.
-/// EstimatedShipping (Milestone 7.3) is the cheapest available shipping
-/// method's cost against the store's default shipping jurisdiction and the
-/// cart's total weight, same estimate-only reasoning as EstimatedTax;
-/// EstimatedShippingRateConfigured is false when no active method exists
-/// for that jurisdiction at all, distinct from a genuine free/zero-cost one.
+/// Subtotal minus PromotionDiscount (Milestone 7.1). EstimatedTax/
+/// EstimatedShipping (Milestones 7.2/7.3) are computed against the store's
+/// configured default jurisdictions, not a real customer destination (no
+/// Address entity exists until Milestone 8.1) - via the Checkout Calculation
+/// Service (Milestone 7.4), which correctly computes both against the
+/// post-discount amount (allocating a cart-level discount across the lines
+/// it actually applies to). EstimatedTaxRateConfigured/
+/// EstimatedShippingRateConfigured are false when nothing at all has been
+/// configured for the store's default jurisdiction, distinct from a genuine
+/// 0%/free rate. EstimatedGrandTotal is Total + EstimatedTax +
+/// EstimatedShipping - still just an estimate, same reasoning as the two
+/// components it combines.
 /// </summary>
 public record CartDto(
     int? Id,
@@ -91,4 +90,5 @@ public record CartDto(
     decimal EstimatedTax,
     bool EstimatedTaxRateConfigured,
     decimal EstimatedShipping,
-    bool EstimatedShippingRateConfigured);
+    bool EstimatedShippingRateConfigured,
+    decimal EstimatedGrandTotal);

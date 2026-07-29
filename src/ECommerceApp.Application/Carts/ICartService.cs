@@ -1,4 +1,5 @@
 using ECommerceApp.Application.Carts.Models;
+using ECommerceApp.Application.Checkout.Models;
 using ECommerceApp.Domain.Common;
 
 namespace ECommerceApp.Application.Carts;
@@ -42,4 +43,12 @@ public interface ICartService
     Task<Result<CartDto>> ApplyCouponAsync(CartOwner owner, string couponCode, CancellationToken cancellationToken = default);
 
     Task<CartDto> RemoveCouponAsync(CartOwner owner, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// The cart's currently-available lines plus the resolved applied
+    /// promotion id, in the shape ICheckoutCalculationService.CalculateAsync
+    /// needs (Milestone 8.2) - Failure ("cart.empty") if there's nothing
+    /// available to check out.
+    /// </summary>
+    Task<Result<CheckoutInputDto>> GetCheckoutInputAsync(CartOwner owner, CancellationToken cancellationToken = default);
 }

@@ -30,10 +30,10 @@ public sealed class TaxService : ITaxService
 
     public async Task<Result<TaxRateDto>> CreateAsync(CreateTaxRateRequest request, CancellationToken cancellationToken = default)
     {
-        if (await RateConflictsAsync(request.CountryCode, request.RegionCode, request.TaxCategory, null, cancellationToken))
+        var conflict = await FindConflictAsync(request.CountryCode, request.RegionCode, request.TaxCategory, null, cancellationToken);
+        if (conflict is not null)
         {
-            return Result.Failure<TaxRateDto>(Error.Conflict(
-                "tax_rate.conflict", "A rate already exists for this country/region/category combination."));
+            return Result.Failure<TaxRateDto>(ConflictError(conflict));
         }
 
         var rate = new TaxRate
@@ -59,10 +59,10 @@ public sealed class TaxService : ITaxService
             return Result.Failure<TaxRateDto>(Error.NotFound("tax_rate.not_found", "Tax rate not found."));
         }
 
-        if (await RateConflictsAsync(request.CountryCode, request.RegionCode, request.TaxCategory, request.Id, cancellationToken))
+        var conflict = await FindConflictAsync(request.CountryCode, request.RegionCode, request.TaxCategory, request.Id, cancellationToken);
+        if (conflict is not null)
         {
-            return Result.Failure<TaxRateDto>(Error.Conflict(
-                "tax_rate.conflict", "A rate already exists for this country/region/category combination."));
+            return Result.Failure<TaxRateDto>(ConflictError(conflict));
         }
 
         rate.CountryCode = request.CountryCode;
@@ -206,20 +206,34 @@ public sealed class TaxService : ITaxService
         return Result.Success();
     }
 
-    private async Task<bool> RateConflictsAsync(
+    /// <summary>
+    /// Looks up a conflicting row via <c>IgnoreQueryFilters()</c> - the
+    /// unique indexes backing this country/region/category combination
+    /// have no <c>IsDeleted</c> filter (a soft-deleted row still occupies its
+    /// natural key at the database level), so a check that only looked at
+    /// non-deleted rows would say "no conflict" and then fail with a raw,
+    /// unhandled <see cref="DbUpdateException"/> at SaveChanges time for a
+    /// combination that matches a previously-deleted rate.
+    /// </summary>
+    private async Task<TaxRate?> FindConflictAsync(
         string countryCode, string? regionCode, string taxCategory, int? excludingId, CancellationToken cancellationToken)
     {
         var normalizedCountry = countryCode.ToUpper();
         var normalizedCategory = taxCategory.ToUpper();
         var normalizedRegion = string.IsNullOrWhiteSpace(regionCode) ? null : regionCode.ToUpper();
 
-        return await _dbContext.TaxRates.AnyAsync(r =>
+        return await _dbContext.TaxRates.IgnoreQueryFilters().FirstOrDefaultAsync(r =>
             r.CountryCode.ToUpper() == normalizedCountry &&
             r.TaxCategory.ToUpper() == normalizedCategory &&
             (r.RegionCode == null ? normalizedRegion == null : r.RegionCode.ToUpper() == normalizedRegion) &&
             r.Id != excludingId,
             cancellationToken);
     }
+
+    private static Error ConflictError(TaxRate conflict) => conflict.IsDeleted
+        ? Error.Conflict("tax_rate.conflict",
+            "A rate for this country/region/category combination was deleted - restore it from the Deleted list or choose a different combination.")
+        : Error.Conflict("tax_rate.conflict", "A rate already exists for this country/region/category combination.");
 
     private static TaxRateDto ToDto(TaxRate rate) => new(
         rate.Id, rate.CountryCode, rate.RegionCode, rate.TaxCategory, rate.RatePercent, rate.IsActive, rate.IsDeleted);

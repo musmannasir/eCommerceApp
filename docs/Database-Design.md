@@ -28,9 +28,13 @@ PriceWhenAdded` (Milestone 6.1/6.2), `WishlistItems` (Milestone 6.3), and
 `Promotions` plus `Carts.AppliedPromotionId` (Milestone 7.1, `PromotionSchema`),
 `TaxRates` (Milestone 7.2, `TaxSchema`), and `ShippingMethods` (Milestone
 7.3, `ShippingSchema`) - see `Data-Dictionary.md` for full column detail on
-all of them. No customer-order tables exist yet; those arrive starting
-Milestone 9. This document grows into a full ER-level description of the
-schema as they're introduced.
+all of them. Milestone 7.4 (the Checkout Calculation Service) adds **no
+schema at all** - it's a pure calculator composing the three services above,
+same reasoning as Milestone 5.2's `IPricingService`. `Addresses` (Milestone
+8.1, `AddressSchema`) is the next new table - a customer's saved address
+book, account-only like `WishlistItems`. No customer-order tables exist yet;
+those arrive starting Milestone 9. This document grows into a full ER-level
+description of the schema as they're introduced.
 
 `ApplicationDbContext` now extends `IdentityDbContext<ApplicationUser,
 IdentityRole, string>` rather than plain `DbContext`, so Identity's tables

@@ -1,5 +1,7 @@
+using ECommerceApp.Infrastructure.Addresses;
 using ECommerceApp.Infrastructure.Carts;
 using ECommerceApp.Infrastructure.Catalog;
+using ECommerceApp.Infrastructure.Checkout;
 using ECommerceApp.Infrastructure.Marketing;
 using ECommerceApp.Infrastructure.Pricing;
 using ECommerceApp.Infrastructure.Shipping;
@@ -34,6 +36,8 @@ public sealed class CatalogTestHarness : IDisposable
     public PromotionService PromotionService { get; }
     public TaxService TaxService { get; }
     public ShippingService ShippingService { get; }
+    public CheckoutCalculationService CheckoutCalculationService { get; }
+    public AddressService AddressService { get; }
 
     public CatalogTestHarness()
     {
@@ -70,7 +74,9 @@ public sealed class CatalogTestHarness : IDisposable
         PromotionService = new PromotionService(DbContext);
         TaxService = new TaxService(DbContext, configuration);
         ShippingService = new ShippingService(DbContext, configuration);
-        CartService = new CartService(DbContext, PricingService, PromotionService, TaxService, ShippingService, Clock);
+        CheckoutCalculationService = new CheckoutCalculationService(PromotionService, TaxService, ShippingService);
+        CartService = new CartService(DbContext, PricingService, PromotionService, CheckoutCalculationService, Clock);
+        AddressService = new AddressService(DbContext, Clock);
     }
 
     public void Dispose() => DbContext.Dispose();

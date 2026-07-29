@@ -1,4 +1,5 @@
 using ECommerceApp.Application.Common.Interfaces;
+using ECommerceApp.Domain.Addresses;
 using ECommerceApp.Domain.Carts;
 using ECommerceApp.Domain.Catalog;
 using ECommerceApp.Domain.Common;
@@ -73,6 +74,7 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser, IdentityR
     public DbSet<Cart> Carts => Set<Cart>();
     public DbSet<CartItem> CartItems => Set<CartItem>();
     public DbSet<WishlistItem> WishlistItems => Set<WishlistItem>();
+    public DbSet<Address> Addresses => Set<Address>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

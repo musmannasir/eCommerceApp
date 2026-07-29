@@ -206,14 +206,20 @@ public sealed class PromotionService : IPromotionService
                 "promotion.minimum_not_met", $"This coupon requires a minimum order of {promotion.MinimumOrderAmount.Value:C}."));
         }
 
-        var eligibleAmount = promotion.ScopeType switch
+        Func<PromotionCartLine, bool> isEligible = promotion.ScopeType switch
         {
-            PromotionScopeType.EntireOrder => subtotal,
-            PromotionScopeType.Category => lines.Where(l => l.CategoryId == promotion.ScopeCategoryId).Sum(l => l.LineTotal),
-            PromotionScopeType.Brand => lines.Where(l => l.BrandId == promotion.ScopeBrandId).Sum(l => l.LineTotal),
-            PromotionScopeType.Product => lines.Where(l => l.ProductId == promotion.ScopeProductId).Sum(l => l.LineTotal),
-            _ => 0m,
+            PromotionScopeType.EntireOrder => _ => true,
+            PromotionScopeType.Category => l => l.CategoryId == promotion.ScopeCategoryId,
+            PromotionScopeType.Brand => l => l.BrandId == promotion.ScopeBrandId,
+            PromotionScopeType.Product => l => l.ProductId == promotion.ScopeProductId,
+            _ => _ => false,
         };
+
+        var eligibleAmount = lines.Where(isEligible).Sum(l => l.LineTotal);
+        if (promotion.ScopeType == PromotionScopeType.EntireOrder)
+        {
+            eligibleAmount = subtotal;
+        }
 
         if (eligibleAmount <= 0)
         {
@@ -228,7 +234,36 @@ public sealed class PromotionService : IPromotionService
         var cappedDiscount = promotion.MaxDiscountAmount.HasValue ? Math.Min(rawDiscount, promotion.MaxDiscountAmount.Value) : rawDiscount;
         var discountAmount = Math.Min(cappedDiscount, eligibleAmount);
 
-        return Result.Success(new PromotionApplicationDto(promotion.Id, promotion.Name, promotion.CouponCode ?? string.Empty, discountAmount));
+        var lineDiscounts = AllocateLineDiscounts(lines, isEligible, eligibleAmount, discountAmount);
+
+        return Result.Success(new PromotionApplicationDto(promotion.Id, promotion.Name, promotion.CouponCode ?? string.Empty, discountAmount, lineDiscounts));
+    }
+
+    /// <summary>
+    /// Splits discountAmount across eligible lines proportionally to each
+    /// one's share of eligibleAmount - the last eligible line takes the
+    /// remainder instead of its own rounded share, so the allocations always
+    /// sum to exactly discountAmount regardless of rounding.
+    /// </summary>
+    private static IReadOnlyList<decimal> AllocateLineDiscounts(
+        IReadOnlyList<PromotionCartLine> lines, Func<PromotionCartLine, bool> isEligible, decimal eligibleAmount, decimal discountAmount)
+    {
+        var allocations = new decimal[lines.Count];
+        var eligibleIndexes = lines.Select((l, i) => (Line: l, Index: i)).Where(x => isEligible(x.Line)).ToList();
+
+        var allocated = 0m;
+        for (var i = 0; i < eligibleIndexes.Count; i++)
+        {
+            var (line, index) = eligibleIndexes[i];
+            var share = i == eligibleIndexes.Count - 1
+                ? discountAmount - allocated
+                : Math.Round(discountAmount * (line.LineTotal / eligibleAmount), 2, MidpointRounding.AwayFromZero);
+
+            allocations[index] = share;
+            allocated += share;
+        }
+
+        return allocations;
     }
 
     private async Task<bool> CouponCodeInUseAsync(string? couponCode, int? excludingId, CancellationToken cancellationToken)
