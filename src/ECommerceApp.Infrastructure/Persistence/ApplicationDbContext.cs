@@ -6,6 +6,7 @@ using ECommerceApp.Domain.Common;
 using ECommerceApp.Domain.Inventory;
 using ECommerceApp.Domain.Marketing;
 using ECommerceApp.Domain.Orders;
+using ECommerceApp.Domain.Payments;
 using ECommerceApp.Domain.Security;
 using ECommerceApp.Domain.Shipping;
 using ECommerceApp.Domain.Storefront;
@@ -78,6 +79,7 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser, IdentityR
     public DbSet<Address> Addresses => Set<Address>();
     public DbSet<Order> Orders => Set<Order>();
     public DbSet<OrderItem> OrderItems => Set<OrderItem>();
+    public DbSet<Payment> Payments => Set<Payment>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

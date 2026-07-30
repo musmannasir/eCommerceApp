@@ -2,8 +2,10 @@ using ECommerceApp.Infrastructure.Addresses;
 using ECommerceApp.Infrastructure.Carts;
 using ECommerceApp.Infrastructure.Catalog;
 using ECommerceApp.Infrastructure.Checkout;
+using ECommerceApp.Infrastructure.Inventory;
 using ECommerceApp.Infrastructure.Marketing;
 using ECommerceApp.Infrastructure.Orders;
+using ECommerceApp.Infrastructure.Payments;
 using ECommerceApp.Infrastructure.Pricing;
 using ECommerceApp.Infrastructure.Shipping;
 using ECommerceApp.Infrastructure.Storefront;
@@ -39,6 +41,8 @@ public sealed class CatalogTestHarness : IDisposable
     public ShippingService ShippingService { get; }
     public CheckoutCalculationService CheckoutCalculationService { get; }
     public AddressService AddressService { get; }
+    public SimulatedPaymentGateway PaymentGateway { get; }
+    public InventoryService InventoryService { get; }
     public OrderService OrderService { get; }
 
     public CatalogTestHarness()
@@ -79,7 +83,9 @@ public sealed class CatalogTestHarness : IDisposable
         CheckoutCalculationService = new CheckoutCalculationService(PromotionService, TaxService, ShippingService);
         CartService = new CartService(DbContext, PricingService, PromotionService, CheckoutCalculationService, Clock);
         AddressService = new AddressService(DbContext, Clock);
-        OrderService = new OrderService(DbContext);
+        PaymentGateway = new SimulatedPaymentGateway(Clock);
+        InventoryService = new InventoryService(DbContext, Clock, new FakeCurrentUserService());
+        OrderService = new OrderService(DbContext, PaymentGateway, InventoryService, Clock);
     }
 
     public void Dispose() => DbContext.Dispose();

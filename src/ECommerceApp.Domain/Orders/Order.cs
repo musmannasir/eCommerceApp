@@ -1,5 +1,6 @@
 using ECommerceApp.Domain.Common;
 using ECommerceApp.Domain.Marketing;
+using ECommerceApp.Domain.Payments;
 using ECommerceApp.Domain.Shipping;
 
 namespace ECommerceApp.Domain.Orders;
@@ -22,6 +23,24 @@ namespace ECommerceApp.Domain.Orders;
 /// Stock is not reserved or deducted when an Order is created - that's
 /// Milestone 9.3's job ("Stock reservation transaction"); the existing
 /// stock-sufficiency check (Milestone 8.3) is a best-effort guard only.
+/// Milestone 9.2 charges a (simulated) payment as part of the same
+/// CreateOrderAsync call that creates this row - <see cref="Payment"/> is
+/// the resulting ledger entry, and <see cref="Status"/> becomes
+/// <see cref="OrderStatus.Paid"/> or <see cref="OrderStatus.PaymentFailed"/>
+/// based on its outcome. A declined card does not retry in place - the
+/// order it produced stays exactly as placed, and trying again means
+/// checking out again (a new order, a new idempotency key), not resubmitting
+/// this one.
+/// Milestone 9.3 reserves stock for every line - via the pre-existing,
+/// previously-unwired IInventoryService.ReserveStockAsync (Milestone 3.1) -
+/// before the payment charge even runs, finally closing the race this
+/// class's own remarks used to describe as open. If any line can't be
+/// reserved (or a genuine concurrent race is lost), nothing is charged and
+/// <see cref="Status"/> becomes <see cref="OrderStatus.StockReservationFailed"/>
+/// with <see cref="StockIssueMessage"/> set; a <see cref="OrderStatus.PaymentFailed"/>
+/// order's reservations are released too - only a genuinely
+/// <see cref="OrderStatus.Paid"/> order keeps them Active, since holding
+/// real inventory for an order nobody actually paid for would be wrong.
 /// </summary>
 public class Order : AuditableEntity
 {
@@ -53,7 +72,10 @@ public class Order : AuditableEntity
     public decimal Tax { get; set; }
     public decimal GrandTotal { get; set; }
 
+    public string? StockIssueMessage { get; set; }
+
     public ShippingMethod? ShippingMethod { get; set; }
     public Promotion? Promotion { get; set; }
     public ICollection<OrderItem> Items { get; set; } = new List<OrderItem>();
+    public Payment? Payment { get; set; }
 }

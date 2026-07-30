@@ -1379,6 +1379,190 @@ confirmed via direct SQL query that the `Orders`/`OrderItems` rows persist
 the correct snapshotted address/shipping/item data - and that the cart is
 genuinely empty afterward.
 
+## Payments (Milestone 9.2)
+
+**Same brief-text gap as Milestones 6.1-9.1** - scope was agreed with the
+user as a concrete, non-speculative reading of the milestone name.
+
+**No real payment processor account exists in this environment** - the
+same reason `DevEmailSender` writes emails to a local preview file instead
+of delivering them. `IPaymentGateway.ChargeAsync` (Application layer) is
+backed by `SimulatedPaymentGateway` (Infrastructure, singleton-registered,
+no `ApplicationDbContext` dependency - the same shape as `IFileStorage`/
+`LocalFileStorage`), which "charges" a card using the well-known,
+publicly-documented Stripe test-card numbers - **4242 4242 4242 4242**
+always succeeds, **4000 0000 0000 0002** always declines - a real,
+industry-standard convention for simulating both outcomes, not something
+invented for this app. Any other card number is validated for real (Luhn
+checksum, 13-19 digit length, expiry date, CVV format) and succeeds if it
+passes those checks, the same leniency a sandbox gateway offers. **The real
+card number is never persisted** - only a masked last-4 (`Mask`) and the
+brand detected from the leading digit (`DetectBrand`) are kept, mirroring
+real PCI-compliant practice even though nothing here is real.
+
+**`Payment` deliberately does NOT derive from `AuditableEntity`** - it's
+`BaseEntity` only, no soft delete, no `RowVersion` - the same reasoning
+`StockMovement` (Milestone 3.1) uses: this row is written once,
+synchronously, with its final outcome already known, and never updated or
+deleted afterward. `ISoftDeletable`'s own doc comment is explicit that
+*"immutable financial transaction records (payments, refunds, ledger
+entries, audit logs) must NOT implement this interface"* - a correction
+(a refund, Milestone 13.3) records a new, separate transaction rather than
+editing this one. `IHasRowVersion`'s doc comment does mention "payment...
+records" as needing concurrency control, but that guidance fits a mutable,
+async, in-flight payment state machine (authorize -> capture -> settle) -
+not this synchronous, one-shot simulation, which has nothing to protect
+with optimistic concurrency since nothing ever writes to a `Payment` row a
+second time.
+
+**`OrderStatus` gains `Paid` and `PaymentFailed`** - exactly the extension
+Milestone 9.1's own doc comment predicted this milestone would make.
+Placing an order and charging its payment method are treated as **one
+atomic step inside `OrderService.CreateOrderAsync`**, not two separate
+calls a caller could invoke out of order or half-complete: the order is
+inserted first (to get its `Id`/`OrderNumber`, unchanged from Milestone
+9.1), then the (simulated) charge runs, then the `Payment` row and the
+order's final `Status` are written together in the same final
+`SaveChangesAsync`. Because the idempotency check at the top of
+`CreateOrderAsync` short-circuits *before* ever calling the gateway, a
+replayed submission for an already-created order (whether sequential or a
+genuine concurrent race caught by the unique index on `IdempotencyKey`)
+can never charge a card twice.
+
+**A declined card does not retry in place.** The order it produced is real
+and persisted (a genuine `ORD-######` number, visible on Confirmation,
+marked `PaymentFailed`) - it simply isn't paid. Trying again means checking
+out again from Cart (a new order, a new idempotency key, a fresh charge
+attempt), not resubmitting the failed one. Building a dedicated "retry
+payment on an existing order" endpoint would be more surface than this
+milestone needs and arguably belongs with Milestone 10.x's order
+operations instead.
+
+**The cart is now only cleared once payment actually succeeds** - a
+deliberate behavior change from Milestone 9.1, which cleared it whenever
+order *creation* succeeded (before Payment existed, "created" and "paid"
+were the same thing). `CheckoutController.PlaceOrder` now checks
+`orderResult.Value.PaymentStatus == nameof(PaymentStatus.Succeeded)` before
+calling `ICartService.ClearCartAsync` - a customer whose card was declined
+keeps their cart exactly as it was, so they can immediately retry checkout
+with a different card instead of re-adding everything.
+
+**Review gained a Payment section** (card number, cardholder name, expiry
+month/year, CVV) with explicit helper text naming both test-card numbers -
+this is not a real payment form and should never be mistaken for one.
+Confirmation shows the outcome plainly: a success banner with the masked
+card/brand, or a decline banner with the gateway's `DeclineReason` and
+guidance to go back and try again.
+
+**Deliberately out of scope**: no admin payments view - surfacing payment
+status alongside order status is Milestone 10.x's job as part of order
+detail, not this milestone's.
+
+**Manually verified end-to-end** against the real dev database: a
+successful charge with the Stripe success test number showed `ORD-000002`
+as Paid with "Visa **** **** **** 4242" on Confirmation and genuinely
+cleared the cart; a declined charge with the Stripe decline test number on
+a fresh cart showed `ORD-000003` as Declined with "Your card was declined."
+and left the cart's item exactly in place - both confirmed via direct SQL
+query against the `Orders`/`Payments` tables.
+
+## Stock reservation transaction (Milestone 9.3)
+
+**Same brief-text gap as Milestones 6.1-9.2** - scope was agreed with the
+user as a concrete, non-speculative reading of the milestone name.
+
+**Reuses machinery that has existed, fully built and completely unwired,
+since Milestone 3.1.** `IInventoryService.ReserveStockAsync`/
+`ReleaseReservationAsync` and the `InventoryReservation` entity were built
+for exactly this purpose but had no caller anywhere in the app until now -
+`OrderService.CreateOrderAsync` is their first real consumer. No new
+Inventory-layer logic was needed.
+
+**Reservation now runs before the payment charge, not after** - this is
+the actual change of substance this milestone makes. Milestone 9.1's own
+doc comment named the race this closes: *"two customers could both
+successfully order the last unit"* between Milestone 8.3's best-effort
+stock guard and an eventual real reservation step. Reserving first also
+means a card is never charged for stock that turns out to be unavailable.
+
+**The warehouse-selection gap, and how this milestone resolves it.**
+`InventoryReservation` is keyed to a single `InventoryItemId` - one
+warehouse - but nothing in Cart or Checkout has ever picked a warehouse;
+`CartService`'s own stock check (`GetStockAsync`) sums `QuantityAvailable`
+across every `InventoryItem` row matching a product/variant, regardless of
+warehouse. `OrderService` resolves this with a documented best-fit policy:
+for each order line, it loads every `InventoryItem` row for that
+product/variant and reserves against whichever one currently has the most
+available stock (computed in-memory, since `QuantityAvailable` is a
+computed property, not a mapped column). A product/variant with no
+`InventoryItem` row at all is treated as untracked/unlimited and skipped
+entirely - the same leniency untracked inventory already gets on the
+product detail page and Cart.
+
+This means an order can legitimately pass the aggregate stock guard
+(Milestone 8.3, and the Cart page's own availability check) and still fail
+reservation, if stock for a line is split across warehouses such that no
+single warehouse alone covers the requested quantity even though the sum
+does. This is a known, accepted limitation - there is no warehouse-
+selection UI anywhere in the app to resolve it more precisely, and building
+one is out of scope for this milestone's name.
+
+**All-or-nothing per order, via application-level compensation, not a
+single enclosing transaction.** Each `InventoryService` method already
+begins and commits its own transaction internally (via the codebase's
+existing `BeginTransactionIfSupportedAsync` helper, duplicated identically
+in `InventoryService` and `PurchaseOrderService`), so nesting a further
+transaction across the `IInventoryService`/`OrderService` boundary isn't
+feasible. Instead, `OrderService` tracks every reservation id it
+successfully creates for the order being placed; if a later line fails, it
+calls `ReleaseReservationAsync` for each already-created reservation before
+recording the failure - never leaving some lines of a doomed order holding
+real inventory. A genuine `DbUpdateConcurrencyException` (two orders racing
+the same last unit - `InventoryItem` carries a `RowVersion` via
+`AuditableEntity`) is caught and folded into the same failure path rather
+than left to surface as an unhandled exception.
+
+**New `OrderStatus.StockReservationFailed` and `Order.StockIssueMessage`.**
+A reservation failure is a genuinely different outcome from `PaymentFailed`
+- the remedy is different items or quantities, not a different card - so
+it gets its own status value rather than reusing `PaymentFailed`.
+`StockIssueMessage` (nullable, mirrors `Payment.DeclineReason`'s precedent)
+records which line failed and why, so revisiting the order later (a page
+reload, an idempotent replay) shows the same message consistently instead
+of losing it after the first in-memory response. The order itself is still
+real and persisted - `CreateOrderAsync` still returns `Result.Success`, the
+same pattern Milestone 9.2 established for `PaymentFailed` - and the
+payment gateway is never called at all for this outcome.
+
+**A `PaymentFailed` order's reservations are released too.** Only a
+genuinely `Paid` order keeps its reservations `Active`; holding real
+inventory against an order nobody actually paid for would be wrong, and
+Milestone 9.2's "trying again means a new order" precedent implies the
+failed order's stock claim shouldn't persist either.
+
+**Confirmation now branches three ways** instead of two - `Paid` (success
+banner), `StockReservationFailed` (a distinct warning banner naming the
+affected item and reason, explicit that the payment method was never
+charged), and `PaymentFailed` (the existing decline banner, unchanged). The
+Payment card is hidden entirely for `StockReservationFailed`, since no
+charge was ever attempted and showing "Declined" would be misleading.
+
+**Deliberately out of scope**: no admin reservation view; no "consume
+reservation at shipment" logic - `ReservationStatus.Consumed` and
+`StockMovementType.SaleCompletion` were both pre-provisioned in their enums
+back in Milestone 3.1 but stay unused, reserved for Milestone 10.3's
+fulfillment state machine.
+
+**Manually verified end-to-end** against the real dev database: a product
+with 3 units in each of two separate warehouses (6 available in aggregate)
+correctly passed the Checkout flow's stock guard for a 5-unit line, then
+correctly failed reservation once `OrderService` tried to secure all 5
+units from a single best-fit warehouse - `ORD-000004` was left as
+`StockReservationFailed` with the message "Not enough stock available to
+reserve this quantity," zero `Payment` rows were created, both warehouses'
+`QuantityReserved` remained at 0, and the cart was not cleared - all
+confirmed via direct SQL query.
+
 ## Framework version note
 
 The brief fixes the stack at **.NET 8**. This machine has only the **.NET 10**

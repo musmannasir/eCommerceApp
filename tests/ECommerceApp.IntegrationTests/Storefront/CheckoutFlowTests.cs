@@ -1,5 +1,6 @@
 using ECommerceApp.Domain.Catalog;
 using ECommerceApp.Domain.Orders;
+using ECommerceApp.Domain.Payments;
 using ECommerceApp.Infrastructure.Persistence;
 using ECommerceApp.IntegrationTests.TestSupport;
 using FluentAssertions;
@@ -237,10 +238,10 @@ public class CheckoutFlowTests
 
         using var scope = _fixture.Factory.Services.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-        var order = await dbContext.Orders.Include(o => o.Items).SingleAsync(o => o.IdempotencyKey == idempotencyKey);
+        var order = await dbContext.Orders.Include(o => o.Items).Include(o => o.Payment).SingleAsync(o => o.IdempotencyKey == idempotencyKey);
 
         order.OrderNumber.Should().MatchRegex(@"^ORD-\d{6}$");
-        order.Status.Should().Be(OrderStatus.Pending);
+        order.Status.Should().Be(OrderStatus.Paid);
         order.ShippingFullName.Should().Be("Jane Doe");
         order.ShippingCity.Should().Be("Springfield");
         order.ShippingCountryCode.Should().Be("US");
@@ -255,6 +256,119 @@ public class CheckoutFlowTests
         item.ProductId.Should().Be(product.Id);
         item.Quantity.Should().Be(1);
         item.UnitPrice.Should().Be(100m);
+
+        order.Payment.Should().NotBeNull();
+        order.Payment!.Status.Should().Be(PaymentStatus.Succeeded);
+        order.Payment.MaskedCardNumber.Should().Be("**** **** **** 4242");
+        order.Payment.CardBrand.Should().Be("Visa");
+        order.Payment.Amount.Should().Be(117m);
+    }
+
+    [Fact]
+    public async Task Placing_the_order_with_a_declining_test_card_marks_it_PaymentFailed_and_does_not_clear_the_cart()
+    {
+        var product = await SeedProductAsync(price: 100m);
+        // Distinct region (OR) - see the comment in the insufficient-stock
+        // test above for why each test needs its own jurisdiction here.
+        await SeedShippingMethodAsync("US", "OR", baseRate: 5m, ratePerKg: 0m);
+
+        var client = _fixture.Factory.CreateClient();
+        await client.RegisterViaFormAsync($"declined.{Guid.NewGuid():N}@example.com", "Str0ng!Passw0rd", "De", "Clined");
+        await AddToCartAsync(client, product.Id);
+        var addressId = await CreateAddressAsync(client, "US", "OR");
+
+        var (reviewPageHtml, _) = await ReachReviewAsync(client, addressId);
+        var (reviewAddressId, shippingMethodId, idempotencyKey) = ExtractReviewFormValues(reviewPageHtml);
+
+        var placeOrderResponse = await PostPlaceOrderAsync(
+            client, reviewPageHtml, reviewAddressId, shippingMethodId, idempotencyKey, cardNumber: "4000000000000002");
+        var body = await placeOrderResponse.Content.ReadAsStringAsync();
+
+        body.Should().Contain("payment failed");
+        body.Should().Contain("Your card was declined.");
+        placeOrderResponse.RequestMessage!.RequestUri!.AbsolutePath.Should().MatchRegex(@"/Checkout/Confirmation/ORD-\d+");
+
+        // A declined payment still produces a real, placed order - just not
+        // a paid one - and must NOT clear the cart, so the customer can
+        // immediately retry checkout with a different card.
+        using var scope = _fixture.Factory.Services.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var order = await dbContext.Orders.SingleAsync(o => o.IdempotencyKey == idempotencyKey);
+        order.Status.Should().Be(OrderStatus.PaymentFailed);
+
+        var cartPageHtml = await client.GetStringAsync("/Cart");
+        cartPageHtml.Should().NotContain("Your cart is empty");
+    }
+
+    [Fact]
+    public async Task Placing_the_order_reserves_stock_and_the_confirmation_shows_it_was_secured()
+    {
+        var product = await SeedProductAsync(price: 100m);
+        await SeedShippingMethodAsync("US", "GA", baseRate: 5m, ratePerKg: 0m);
+        await SeedInventoryAsync(product.Id, onHand: 10, allowBackorder: false);
+
+        var client = _fixture.Factory.CreateClient();
+        await client.RegisterViaFormAsync($"reserve.{Guid.NewGuid():N}@example.com", "Str0ng!Passw0rd", "Re", "Serve");
+        await AddToCartAsync(client, product.Id);
+        var addressId = await CreateAddressAsync(client, "US", "GA");
+
+        var (reviewPageHtml, _) = await ReachReviewAsync(client, addressId);
+        var (reviewAddressId, shippingMethodId, idempotencyKey) = ExtractReviewFormValues(reviewPageHtml);
+
+        var placeOrderResponse = await PostPlaceOrderAsync(client, reviewPageHtml, reviewAddressId, shippingMethodId, idempotencyKey);
+        placeOrderResponse.EnsureSuccessStatusCode();
+
+        using var scope = _fixture.Factory.Services.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var order = await dbContext.Orders.SingleAsync(o => o.IdempotencyKey == idempotencyKey);
+        order.Status.Should().Be(OrderStatus.Paid);
+
+        var item = await dbContext.InventoryItems.SingleAsync(i => i.ProductId == product.Id);
+        item.QuantityReserved.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task Placing_the_order_when_stock_is_split_across_warehouses_below_the_line_quantity_fails_reservation_without_charging()
+    {
+        // The M8.3 pre-flight guard (and the Cart page) both check aggregate
+        // stock across every warehouse - 3 + 3 = 6 comfortably covers a
+        // quantity-5 line. But nothing in Cart/Checkout ever picks a single
+        // warehouse, so the M9.3 reservation step must pick ONE InventoryItem
+        // row to reserve against - the best-fit warehouse here only has 3
+        // available, which is genuinely not enough for 5 units. This is the
+        // warehouse-fragmentation gap M9.3 documents as a known, accepted
+        // limitation (no warehouse-selection UI exists anywhere yet).
+        var product = await SeedProductAsync(price: 100m);
+        await SeedShippingMethodAsync("US", "MT", baseRate: 5m, ratePerKg: 0m);
+        await SeedFragmentedInventoryAsync(product.Id, warehouse1OnHand: 3, warehouse2OnHand: 3);
+
+        var client = _fixture.Factory.CreateClient();
+        await client.RegisterViaFormAsync($"fragmented.{Guid.NewGuid():N}@example.com", "Str0ng!Passw0rd", "Frag", "Mented");
+        await AddToCartAsync(client, product.Id, quantity: 5);
+        var addressId = await CreateAddressAsync(client, "US", "MT");
+
+        var (reviewPageHtml, _) = await ReachReviewAsync(client, addressId);
+        var (reviewAddressId, shippingMethodId, idempotencyKey) = ExtractReviewFormValues(reviewPageHtml);
+
+        var placeOrderResponse = await PostPlaceOrderAsync(client, reviewPageHtml, reviewAddressId, shippingMethodId, idempotencyKey);
+        var body = await placeOrderResponse.Content.ReadAsStringAsync();
+
+        body.Should().Contain("could not be placed");
+        placeOrderResponse.RequestMessage!.RequestUri!.AbsolutePath.Should().MatchRegex(@"/Checkout/Confirmation/ORD-\d+");
+
+        using var scope = _fixture.Factory.Services.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var order = await dbContext.Orders.Include(o => o.Payment).SingleAsync(o => o.IdempotencyKey == idempotencyKey);
+        order.Status.Should().Be(OrderStatus.StockReservationFailed);
+        order.StockIssueMessage.Should().NotBeNullOrEmpty();
+        order.Payment.Should().BeNull();
+
+        var items = await dbContext.InventoryItems.Where(i => i.ProductId == product.Id).ToListAsync();
+        items.Should().OnlyContain(i => i.QuantityReserved == 0);
+
+        // Never charged - the cart is not cleared, same as a declined card.
+        var cartPageHtml = await client.GetStringAsync("/Cart");
+        cartPageHtml.Should().NotContain("Your cart is empty");
     }
 
     [Fact]
@@ -325,8 +439,13 @@ public class CheckoutFlowTests
         return (addressId, shippingMethodId, idempotencyKey);
     }
 
+    // Defaults to the well-known Stripe test card that always succeeds
+    // (Milestone 9.2), so every pre-existing call site that only cares about
+    // the stock/address/shipping-method guards keeps working unchanged;
+    // pass cardNumber explicitly to exercise a declined payment instead.
     private static Task<HttpResponseMessage> PostPlaceOrderAsync(
-        HttpClient client, string reviewPageHtml, int addressId, int shippingMethodId, string idempotencyKey)
+        HttpClient client, string reviewPageHtml, int addressId, int shippingMethodId, string idempotencyKey,
+        string cardNumber = "4242424242424242")
     {
         var token = HtmlHelpers.ExtractAntiForgeryToken(reviewPageHtml);
         return client.PostAsync("/Checkout/PlaceOrder", new FormUrlEncodedContent(new Dictionary<string, string>
@@ -334,6 +453,11 @@ public class CheckoutFlowTests
             ["addressId"] = addressId.ToString(),
             ["shippingMethodId"] = shippingMethodId.ToString(),
             ["idempotencyKey"] = idempotencyKey,
+            ["cardNumber"] = cardNumber,
+            ["cardholderName"] = "Jane Doe",
+            ["expiryMonth"] = "12",
+            ["expiryYear"] = "2030",
+            ["cvv"] = "123",
             ["__RequestVerificationToken"] = token,
         }));
     }
@@ -391,14 +515,14 @@ public class CheckoutFlowTests
         return int.Parse(match.Groups[1].Value);
     }
 
-    private static async Task AddToCartAsync(HttpClient client, int productId)
+    private static async Task AddToCartAsync(HttpClient client, int productId, int quantity = 1)
     {
         var homeHtml = await client.GetStringAsync("/");
         var csrfToken = HtmlHelpers.ExtractMetaCsrfToken(homeHtml);
 
         var request = new HttpRequestMessage(HttpMethod.Post, "/Cart/Add")
         {
-            Content = System.Net.Http.Json.JsonContent.Create(new { ProductId = productId, ProductVariantId = (int?)null, Quantity = 1 }),
+            Content = System.Net.Http.Json.JsonContent.Create(new { ProductId = productId, ProductVariantId = (int?)null, Quantity = quantity }),
         };
         request.Headers.Add("X-CSRF-TOKEN", csrfToken);
         var response = await client.SendAsync(request);
@@ -469,6 +593,38 @@ public class CheckoutFlowTests
             AllowBackorder = allowBackorder,
             LastStockUpdateUtc = DateTime.UtcNow,
         });
+        await dbContext.SaveChangesAsync();
+    }
+
+    private async Task SeedFragmentedInventoryAsync(int productId, int warehouse1OnHand, int warehouse2OnHand)
+    {
+        using var scope = _fixture.Factory.Services.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+
+        var warehouse1 = new Domain.Inventory.Warehouse { Name = "WH1", Code = $"WH-{Guid.NewGuid():N}", IsActive = true };
+        var warehouse2 = new Domain.Inventory.Warehouse { Name = "WH2", Code = $"WH-{Guid.NewGuid():N}", IsActive = true };
+        dbContext.Warehouses.AddRange(warehouse1, warehouse2);
+        await dbContext.SaveChangesAsync();
+
+        dbContext.InventoryItems.AddRange(
+            new Domain.Inventory.InventoryItem
+            {
+                WarehouseId = warehouse1.Id,
+                ProductId = productId,
+                QuantityOnHand = warehouse1OnHand,
+                QuantityReserved = 0,
+                AllowBackorder = false,
+                LastStockUpdateUtc = DateTime.UtcNow,
+            },
+            new Domain.Inventory.InventoryItem
+            {
+                WarehouseId = warehouse2.Id,
+                ProductId = productId,
+                QuantityOnHand = warehouse2OnHand,
+                QuantityReserved = 0,
+                AllowBackorder = false,
+                LastStockUpdateUtc = DateTime.UtcNow,
+            });
         await dbContext.SaveChangesAsync();
     }
 
