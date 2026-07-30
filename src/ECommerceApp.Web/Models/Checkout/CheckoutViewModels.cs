@@ -1,6 +1,7 @@
 using ECommerceApp.Application.Addresses.Models;
 using ECommerceApp.Application.Carts.Models;
 using ECommerceApp.Application.Checkout.Models;
+using ECommerceApp.Application.Orders.Models;
 using ECommerceApp.Application.Shipping.Models;
 
 namespace ECommerceApp.Web.Models.Checkout;
@@ -31,10 +32,8 @@ public record CheckoutReviewPageViewModel(
     AddressDto Address, ShippingOptionDto ShippingOption, IReadOnlyList<CartItemDto> Items, CheckoutCalculationResult Calculation, string IdempotencyKey);
 
 /// <summary>
-/// Milestone 8.3 - the frozen result of a successfully validated PlaceOrder
-/// submission, read back from the idempotency cache. Explicit that this is
-/// not a real, persisted order - Order entities don't exist until Milestone
-/// 9.1.
+/// Milestone 9.1 - the real, persisted Order created by a successful
+/// PlaceOrder submission (previously, before Order entities existed,
+/// Milestone 8.3 rendered a frozen-but-unpersisted DTO from a cache here).
 /// </summary>
-public record CheckoutConfirmationPageViewModel(
-    AddressDto Address, ShippingOptionDto ShippingOption, IReadOnlyList<CartItemDto> Items, CheckoutCalculationResult Calculation);
+public record CheckoutConfirmationPageViewModel(OrderDto Order);

@@ -1,26 +1,28 @@
 @model ECommerceApp.Web.Models.Checkout.CheckoutConfirmationPageViewModel
 @{
     ViewData["Title"] = "Checkout - Confirmation";
-    var calc = Model.Calculation;
+    var order = Model.Order;
 }
 
 <h1 class="h3 mb-1">Checkout</h1>
 
 <div class="alert alert-success">
-    <strong>Your order details have been validated.</strong> Real order placement, payment
-    processing, and a confirmation email arrive in a later milestone - nothing has been charged
-    or shipped yet.
+    <strong>Thank you - your order @order.OrderNumber has been placed.</strong> Payment
+    processing, stock reservation, and a confirmation email arrive in a later milestone -
+    nothing has been charged or shipped yet.
 </div>
+
+<p class="text-muted small">Placed @order.PlacedAtUtc.ToString("f") UTC</p>
 
 <div class="row">
     <div class="col-lg-8">
         <div class="card mb-3">
             <div class="card-body">
                 <div class="text-muted small">Shipping to</div>
-                <strong>@(string.IsNullOrEmpty(Model.Address.Label) ? Model.Address.FullName : Model.Address.Label)</strong>
-                <div class="small">@Model.Address.FullName &middot; @Model.Address.Phone</div>
+                <strong>@(string.IsNullOrEmpty(order.ShippingLabel) ? order.ShippingFullName : order.ShippingLabel)</strong>
+                <div class="small">@order.ShippingFullName &middot; @order.ShippingPhone</div>
                 <div class="small">
-                    @Model.Address.Line1, @Model.Address.City@(!string.IsNullOrEmpty(Model.Address.RegionCode) ? $", {Model.Address.RegionCode}" : "") @Model.Address.PostalCode, @Model.Address.CountryCode
+                    @order.ShippingLine1, @order.ShippingCity@(!string.IsNullOrEmpty(order.ShippingRegionCode) ? $", {order.ShippingRegionCode}" : "") @order.ShippingPostalCode, @order.ShippingCountryCode
                 </div>
             </div>
         </div>
@@ -28,7 +30,7 @@
         <div class="card mb-3">
             <div class="card-body">
                 <div class="text-muted small">Shipping method</div>
-                <strong>@Model.ShippingOption.Name</strong> - @(Model.ShippingOption.Cost == 0 ? "Free" : Model.ShippingOption.Cost.ToString("0.00"))
+                <strong>@order.ShippingMethodName</strong> - @(order.ShippingCost == 0 ? "Free" : order.ShippingCost.ToString("0.00"))
             </div>
         </div>
 
@@ -37,7 +39,7 @@
                 <h2 class="h6">Items</h2>
                 <table class="table table-sm align-middle mb-0">
                     <tbody>
-                        @foreach (var item in Model.Items)
+                        @foreach (var item in order.Items)
                         {
                             <tr>
                                 <td>
@@ -62,33 +64,33 @@
                 <h2 class="h6">Order total</h2>
                 <div class="d-flex justify-content-between">
                     <span>Subtotal</span>
-                    <span>@calc.Subtotal.ToString("0.00")</span>
+                    <span>@order.Subtotal.ToString("0.00")</span>
                 </div>
-                @if (calc.PromotionDiscount > 0)
+                @if (order.PromotionDiscountAmount > 0)
                 {
                     <div class="d-flex justify-content-between text-success">
                         <span>
                             Discount
-                            @if (!string.IsNullOrEmpty(calc.AppliedCouponCode))
+                            @if (!string.IsNullOrEmpty(order.AppliedCouponCode))
                             {
-                                <span class="text-muted small">(@calc.AppliedCouponCode)</span>
+                                <span class="text-muted small">(@order.AppliedCouponCode)</span>
                             }
                         </span>
-                        <span>-@calc.PromotionDiscount.ToString("0.00")</span>
+                        <span>-@order.PromotionDiscountAmount.ToString("0.00")</span>
                     </div>
                 }
                 <div class="d-flex justify-content-between">
                     <span>Tax</span>
-                    <span>@calc.Tax.ToString("0.00")</span>
+                    <span>@order.Tax.ToString("0.00")</span>
                 </div>
                 <div class="d-flex justify-content-between">
                     <span>Shipping</span>
-                    <span>@(calc.Shipping == 0 ? "Free" : calc.Shipping.ToString("0.00"))</span>
+                    <span>@(order.ShippingCost == 0 ? "Free" : order.ShippingCost.ToString("0.00"))</span>
                 </div>
                 <hr />
                 <div class="d-flex justify-content-between fs-5">
                     <strong>Total</strong>
-                    <strong>@calc.GrandTotal.ToString("0.00")</strong>
+                    <strong>@order.GrandTotal.ToString("0.00")</strong>
                 </div>
                 <a asp-controller="Catalog" asp-action="Index" class="btn btn-outline-secondary w-100 mt-3">Continue shopping</a>
             </div>
