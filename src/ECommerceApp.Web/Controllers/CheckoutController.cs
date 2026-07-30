@@ -5,7 +5,9 @@ using ECommerceApp.Application.Carts.Models;
 using ECommerceApp.Application.Checkout;
 using ECommerceApp.Application.Orders;
 using ECommerceApp.Application.Orders.Models;
+using ECommerceApp.Application.Payments.Models;
 using ECommerceApp.Application.Shipping;
+using ECommerceApp.Domain.Payments;
 using ECommerceApp.Web.Models.Checkout;
 using ECommerceApp.Web.Services;
 using Microsoft.AspNetCore.Authorization;
@@ -28,6 +30,11 @@ namespace ECommerceApp.Web.Controllers;
 /// and PlaceOrder now actually persists an Order instead of caching a DTO.
 /// Stock is still not reserved or deducted here (Milestone 9.3's job); the
 /// stock-sufficiency check below remains a best-effort guard only.
+/// Milestone 9.2 charges a (simulated) card as part of the same PlaceOrder
+/// submission - a declined card still leaves a real, placed order (visible
+/// on Confirmation, marked PaymentFailed) but the cart is only cleared once
+/// payment actually succeeds, so a customer whose card was declined can
+/// immediately retry checkout with the same cart contents.
 /// </summary>
 [Authorize]
 [Route("Checkout")]
@@ -207,7 +214,10 @@ public class CheckoutController : Controller
     /// </summary>
     [HttpPost("PlaceOrder")]
     [ValidateAntiForgeryToken]
-    public async Task<IActionResult> PlaceOrder(int addressId, int shippingMethodId, string idempotencyKey, CancellationToken cancellationToken)
+    public async Task<IActionResult> PlaceOrder(
+        int addressId, int shippingMethodId, string idempotencyKey,
+        string cardNumber, string cardholderName, int expiryMonth, int expiryYear, string cvv,
+        CancellationToken cancellationToken)
     {
         var existingOrder = await _orderService.GetByIdempotencyKeyAsync(UserId, idempotencyKey, cancellationToken);
         if (existingOrder.IsSuccess)
@@ -253,9 +263,10 @@ public class CheckoutController : Controller
         var shippingOption = options.First(o => o.ShippingMethodId == shippingMethodId);
 
         var items = cart.Items.Where(i => i.IsAvailable).ToList();
+        var payment = new ChargeRequest(cardNumber, cardholderName, expiryMonth, expiryYear, cvv, calculation.GrandTotal);
 
         var orderResult = await _orderService.CreateOrderAsync(
-            new CreateOrderRequest(UserId, idempotencyKey, address, checkoutInput.Value.AppliedPromotionId, shippingOption, items, calculation),
+            new CreateOrderRequest(UserId, idempotencyKey, address, checkoutInput.Value.AppliedPromotionId, shippingOption, items, calculation, payment),
             cancellationToken);
 
         if (orderResult.IsFailure)
@@ -264,7 +275,13 @@ public class CheckoutController : Controller
             return RedirectToAction(nameof(Review), new { addressId, shippingMethodId });
         }
 
-        await _cartService.ClearCartAsync(Owner, cancellationToken);
+        // Only clear the cart once the card was actually charged - a
+        // declined card leaves the cart intact so the customer can retry
+        // immediately rather than having to re-add everything.
+        if (orderResult.Value.PaymentStatus == nameof(PaymentStatus.Succeeded))
+        {
+            await _cartService.ClearCartAsync(Owner, cancellationToken);
+        }
 
         return RedirectToAction(nameof(Confirmation), new { orderNumber = orderResult.Value.OrderNumber });
     }

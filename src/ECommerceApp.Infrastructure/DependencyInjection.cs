@@ -8,6 +8,7 @@ using ECommerceApp.Application.Common.Options;
 using ECommerceApp.Application.Inventory;
 using ECommerceApp.Application.Marketing;
 using ECommerceApp.Application.Orders;
+using ECommerceApp.Application.Payments;
 using ECommerceApp.Application.Pricing;
 using ECommerceApp.Application.Shipping;
 using ECommerceApp.Application.Storefront;
@@ -24,6 +25,7 @@ using ECommerceApp.Infrastructure.Identity;
 using ECommerceApp.Infrastructure.Inventory;
 using ECommerceApp.Infrastructure.Marketing;
 using ECommerceApp.Infrastructure.Orders;
+using ECommerceApp.Infrastructure.Payments;
 using ECommerceApp.Infrastructure.Persistence;
 using ECommerceApp.Infrastructure.Pricing;
 using ECommerceApp.Infrastructure.Security;
@@ -116,6 +118,7 @@ public static class DependencyInjection
         services.AddScoped<ICartService, CartService>();
         services.AddScoped<IWishlistService, WishlistService>();
         services.AddScoped<IAddressService, AddressService>();
+        services.AddSingleton<IPaymentGateway, SimulatedPaymentGateway>();
         services.AddScoped<IOrderService, OrderService>();
 
         return services;

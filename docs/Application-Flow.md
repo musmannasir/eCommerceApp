@@ -196,32 +196,51 @@ wishlist. What's live today:
   match any option for this address) redirects back to the Shipping step.
   Since Milestone 8.3, this step also renders a fresh, single-use
   idempotency token (a hidden field on the "Place order" form) and the
-  button is enabled.
+  button is enabled. Since Milestone 9.2, this step also renders a Payment
+  section (card number, cardholder name, expiry month/year, CVV) with
+  helper text naming the two Stripe test-card numbers that simulate a
+  success/decline - this is not a real payment form.
 - `POST /Checkout/PlaceOrder` (Milestone 8.3, now persisting a real `Order`
-  as of Milestone 9.1) - re-runs the full validation battery (cart
-  availability, stock sufficiency, address ownership, shipping-method
-  availability) one last time before submission, since any of it can
-  change in the time between viewing Review and clicking the button; a
-  stock or stale-shipping-method failure redirects back to `/Cart` or the
-  Shipping step respectively, same as the equivalent `GET`-time guards.
-  First checks for an existing order under the submitted idempotency token
-  (`IOrderService.GetByIdempotencyKeyAsync`) - if found, skips straight to
-  that order's Confirmation page without re-validating. Otherwise, on
-  success, creates the `Order`/`OrderItem` rows (`IOrderService
+  as of Milestone 9.1, now charging a simulated payment as of Milestone
+  9.2, now reserving stock first as of Milestone 9.3) - re-runs the full
+  validation battery (cart availability, stock sufficiency, address
+  ownership, shipping-method availability) one last time before submission,
+  since any of it can change in the time between viewing Review and
+  clicking the button; a stock or stale-shipping-method failure redirects
+  back to `/Cart` or the Shipping step respectively, same as the equivalent
+  `GET`-time guards. First checks for an existing order under the submitted
+  idempotency token (`IOrderService.GetByIdempotencyKeyAsync`) - if found,
+  skips straight to that order's Confirmation page without re-validating,
+  re-reserving, or re-charging. Otherwise, on success, creates the
+  `Order`/`OrderItem` rows, then reserves stock for each line (best-fit
+  warehouse, `IInventoryService.ReserveStockAsync`), then - only if every
+  line reserved successfully - charges the submitted card via the
+  simulated `IPaymentGateway`, all inside the same call (`IOrderService
   .CreateOrderAsync`, keyed by the idempotency token - unique-indexed, so a
   genuine concurrent duplicate is caught by the database rather than a
-  check-then-act gap), clears the cart (Milestone 9.1 - previously it
-  silently wasn't), and redirects to `/Checkout/Confirmation/{orderNumber}`.
-  Stock is not reserved or deducted here - that's Milestone 9.3's job.
+  check-then-act gap, and can never be reserved or charged twice). If any
+  line's stock can't be secured, no reservations are left dangling (the
+  ones already made for this order are released) and the card is never
+  charged - the order is still created, marked `StockReservationFailed`,
+  with `StockIssueMessage` naming the affected line. Otherwise the card is
+  charged once, synchronously - a decline still produces a real, persisted
+  order (marked `PaymentFailed`, its reservations released too, not retried
+  in place), and the cart is only cleared once the charge actually succeeds
+  (Milestone 9.2 - a decline or a stock-reservation failure both leave the
+  cart untouched so the customer can immediately retry). Redirects to
+  `/Checkout/Confirmation/{orderNumber}` in all three outcomes.
 - `GET /Checkout/Confirmation/{orderNumber}` (Milestone 8.3's cache-backed
   page, now backed by a real persisted `Order` as of Milestone 9.1) -
   `IOrderService.GetByOrderNumberAsync`, ownership-scoped exactly like
   `IAddressService.GetByIdAsync` (another customer's order number returns
-  `NotFound`, never their data); explicit that payment processing, stock
-  reservation, and a confirmation email all arrive in later milestones -
-  "nothing has been charged or shipped yet." A missing or foreign order
-  number redirects back to `/Checkout` with a "we couldn't find that order"
-  message instead of erroring.
+  `NotFound`, never their data); shows the real outcome three ways
+  (Milestone 9.3) - a success banner with the masked card/brand for `Paid`,
+  a stock-issue banner naming the affected item and reason for
+  `StockReservationFailed` (explicit that the payment method was never
+  charged, and the Payment card is hidden entirely), or the existing decline
+  banner with the gateway's decline reason for `PaymentFailed`. A missing
+  or foreign order number redirects back to `/Checkout` with a "we couldn't
+  find that order" message instead of erroring.
 - `GET /Account/Register`, `POST /Account/Register` - creates the account
   (assigned the `Customer` role), signs the user in immediately, then folds
   any guest cart into the new account (Milestone 6.2 - see

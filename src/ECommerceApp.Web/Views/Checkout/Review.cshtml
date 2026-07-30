@@ -12,101 +12,136 @@
     <div class="alert alert-danger">@error</div>
 }
 
-<div class="row">
-    <div class="col-lg-8">
-        <div class="card mb-3">
-            <div class="card-body d-flex justify-content-between align-items-start">
-                <div>
-                    <div class="text-muted small">Shipping to</div>
-                    <strong>@(string.IsNullOrEmpty(Model.Address.Label) ? Model.Address.FullName : Model.Address.Label)</strong>
-                    <div class="small">@Model.Address.FullName &middot; @Model.Address.Phone</div>
-                    <div class="small">
-                        @Model.Address.Line1, @Model.Address.City@(!string.IsNullOrEmpty(Model.Address.RegionCode) ? $", {Model.Address.RegionCode}" : "") @Model.Address.PostalCode, @Model.Address.CountryCode
+<form asp-action="PlaceOrder" method="post">
+    <input type="hidden" name="addressId" value="@Model.Address.Id" />
+    <input type="hidden" name="shippingMethodId" value="@Model.ShippingOption.ShippingMethodId" />
+    <input type="hidden" name="idempotencyKey" value="@Model.IdempotencyKey" />
+
+    <div class="row">
+        <div class="col-lg-8">
+            <div class="card mb-3">
+                <div class="card-body d-flex justify-content-between align-items-start">
+                    <div>
+                        <div class="text-muted small">Shipping to</div>
+                        <strong>@(string.IsNullOrEmpty(Model.Address.Label) ? Model.Address.FullName : Model.Address.Label)</strong>
+                        <div class="small">@Model.Address.FullName &middot; @Model.Address.Phone</div>
+                        <div class="small">
+                            @Model.Address.Line1, @Model.Address.City@(!string.IsNullOrEmpty(Model.Address.RegionCode) ? $", {Model.Address.RegionCode}" : "") @Model.Address.PostalCode, @Model.Address.CountryCode
+                        </div>
+                    </div>
+                    <a asp-action="Index" class="btn btn-sm btn-outline-secondary">Change address</a>
+                </div>
+            </div>
+
+            <div class="card mb-3">
+                <div class="card-body d-flex justify-content-between align-items-center">
+                    <div>
+                        <div class="text-muted small">Shipping method</div>
+                        <strong>@Model.ShippingOption.Name</strong> - @(Model.ShippingOption.Cost == 0 ? "Free" : Model.ShippingOption.Cost.ToString("0.00"))
+                    </div>
+                    <a asp-action="Shipping" asp-route-addressId="@Model.Address.Id" class="btn btn-sm btn-outline-secondary">Change</a>
+                </div>
+            </div>
+
+            <div class="card mb-3">
+                <div class="card-body">
+                    <h2 class="h6">Payment</h2>
+                    <p class="text-muted small">
+                        This is a simulated payment gateway - no real charge occurs. Use
+                        <code>4242 4242 4242 4242</code> to simulate a successful charge, or
+                        <code>4000 0000 0000 0002</code> to simulate a decline.
+                    </p>
+                    <div class="row g-2">
+                        <div class="col-12">
+                            <label class="form-label small">Card number</label>
+                            <input type="text" name="cardNumber" class="form-control" placeholder="4242 4242 4242 4242" required maxlength="23" />
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label small">Cardholder name</label>
+                            <input type="text" name="cardholderName" class="form-control" required />
+                        </div>
+                        <div class="col-4">
+                            <label class="form-label small">Expiry month</label>
+                            <input type="number" name="expiryMonth" class="form-control" min="1" max="12" placeholder="MM" required />
+                        </div>
+                        <div class="col-4">
+                            <label class="form-label small">Expiry year</label>
+                            <input type="number" name="expiryYear" class="form-control" min="2024" max="2099" placeholder="YYYY" required />
+                        </div>
+                        <div class="col-4">
+                            <label class="form-label small">CVV</label>
+                            <input type="text" name="cvv" class="form-control" placeholder="123" required maxlength="4" />
+                        </div>
                     </div>
                 </div>
-                <a asp-action="Index" class="btn btn-sm btn-outline-secondary">Change address</a>
             </div>
-        </div>
 
-        <div class="card mb-3">
-            <div class="card-body d-flex justify-content-between align-items-center">
-                <div>
-                    <div class="text-muted small">Shipping method</div>
-                    <strong>@Model.ShippingOption.Name</strong> - @(Model.ShippingOption.Cost == 0 ? "Free" : Model.ShippingOption.Cost.ToString("0.00"))
-                </div>
-                <a asp-action="Shipping" asp-route-addressId="@Model.Address.Id" class="btn btn-sm btn-outline-secondary">Change</a>
-            </div>
-        </div>
-
-        <div class="card">
-            <div class="card-body">
-                <h2 class="h6">Items</h2>
-                <table class="table table-sm align-middle mb-0">
-                    <tbody>
-                        @foreach (var item in Model.Items)
-                        {
-                            <tr>
-                                <td>
-                                    @item.ProductName
-                                    @if (!string.IsNullOrEmpty(item.VariantDescription))
-                                    {
-                                        <div class="text-muted small">@item.VariantDescription</div>
-                                    }
-                                </td>
-                                <td class="text-center">&times;@item.Quantity</td>
-                                <td class="text-end">@item.LineTotal.ToString("0.00")</td>
-                            </tr>
-                        }
-                    </tbody>
-                </table>
-            </div>
-        </div>
-    </div>
-    <div class="col-lg-4">
-        <div class="card">
-            <div class="card-body">
-                <h2 class="h6">Order total</h2>
-                <div class="d-flex justify-content-between">
-                    <span>Subtotal</span>
-                    <span>@calc.Subtotal.ToString("0.00")</span>
-                </div>
-                @if (calc.PromotionDiscount > 0)
-                {
-                    <div class="d-flex justify-content-between text-success">
-                        <span>
-                            Discount
-                            @if (!string.IsNullOrEmpty(calc.AppliedCouponCode))
+            <div class="card">
+                <div class="card-body">
+                    <h2 class="h6">Items</h2>
+                    <table class="table table-sm align-middle mb-0">
+                        <tbody>
+                            @foreach (var item in Model.Items)
                             {
-                                <span class="text-muted small">(@calc.AppliedCouponCode)</span>
+                                <tr>
+                                    <td>
+                                        @item.ProductName
+                                        @if (!string.IsNullOrEmpty(item.VariantDescription))
+                                        {
+                                            <div class="text-muted small">@item.VariantDescription</div>
+                                        }
+                                    </td>
+                                    <td class="text-center">&times;@item.Quantity</td>
+                                    <td class="text-end">@item.LineTotal.ToString("0.00")</td>
+                                </tr>
                             }
-                        </span>
-                        <span>-@calc.PromotionDiscount.ToString("0.00")</span>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+        <div class="col-lg-4">
+            <div class="card">
+                <div class="card-body">
+                    <h2 class="h6">Order total</h2>
+                    <div class="d-flex justify-content-between">
+                        <span>Subtotal</span>
+                        <span>@calc.Subtotal.ToString("0.00")</span>
                     </div>
-                }
-                <div class="d-flex justify-content-between">
-                    <span>Tax</span>
-                    <span>@calc.Tax.ToString("0.00")</span>
+                    @if (calc.PromotionDiscount > 0)
+                    {
+                        <div class="d-flex justify-content-between text-success">
+                            <span>
+                                Discount
+                                @if (!string.IsNullOrEmpty(calc.AppliedCouponCode))
+                                {
+                                    <span class="text-muted small">(@calc.AppliedCouponCode)</span>
+                                }
+                            </span>
+                            <span>-@calc.PromotionDiscount.ToString("0.00")</span>
+                        </div>
+                    }
+                    <div class="d-flex justify-content-between">
+                        <span>Tax</span>
+                        <span>@calc.Tax.ToString("0.00")</span>
+                    </div>
+                    <div class="d-flex justify-content-between">
+                        <span>Shipping</span>
+                        <span>@(calc.Shipping == 0 ? "Free" : calc.Shipping.ToString("0.00"))</span>
+                    </div>
+                    <hr />
+                    <div class="d-flex justify-content-between fs-5">
+                        <strong>Total</strong>
+                        <strong>@calc.GrandTotal.ToString("0.00")</strong>
+                    </div>
+                    <button type="submit" class="btn btn-primary w-100 mt-3">Place order</button>
+                    <p class="text-muted small mt-2 mb-0">
+                        Placing this order reserves stock for each item first, then charges the
+                        card above (simulated) - if an item's stock can't be secured, your card
+                        is never charged.
+                    </p>
                 </div>
-                <div class="d-flex justify-content-between">
-                    <span>Shipping</span>
-                    <span>@(calc.Shipping == 0 ? "Free" : calc.Shipping.ToString("0.00"))</span>
-                </div>
-                <hr />
-                <div class="d-flex justify-content-between fs-5">
-                    <strong>Total</strong>
-                    <strong>@calc.GrandTotal.ToString("0.00")</strong>
-                </div>
-                <form asp-action="PlaceOrder" method="post" class="mt-3">
-                    <input type="hidden" name="addressId" value="@Model.Address.Id" />
-                    <input type="hidden" name="shippingMethodId" value="@Model.ShippingOption.ShippingMethodId" />
-                    <input type="hidden" name="idempotencyKey" value="@Model.IdempotencyKey" />
-                    <button type="submit" class="btn btn-primary w-100">Place order</button>
-                </form>
-                <p class="text-muted small mt-2 mb-0">
-                    Placing this order does not yet charge a payment method or reserve stock -
-                    those arrive in a later milestone.
-                </p>
             </div>
         </div>
     </div>
-</div>
+</form>

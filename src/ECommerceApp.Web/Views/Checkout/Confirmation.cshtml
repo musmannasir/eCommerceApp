@@ -2,15 +2,37 @@
 @{
     ViewData["Title"] = "Checkout - Confirmation";
     var order = Model.Order;
+    var paid = order.Status == nameof(ECommerceApp.Domain.Orders.OrderStatus.Paid);
+    var stockFailed = order.Status == nameof(ECommerceApp.Domain.Orders.OrderStatus.StockReservationFailed);
 }
 
 <h1 class="h3 mb-1">Checkout</h1>
 
-<div class="alert alert-success">
-    <strong>Thank you - your order @order.OrderNumber has been placed.</strong> Payment
-    processing, stock reservation, and a confirmation email arrive in a later milestone -
-    nothing has been charged or shipped yet.
-</div>
+@if (paid)
+{
+    <div class="alert alert-success">
+        <strong>Thank you - your order @order.OrderNumber has been placed and paid.</strong>
+        A confirmation email arrives in a later milestone - nothing has shipped yet.
+    </div>
+}
+else if (stockFailed)
+{
+    <div class="alert alert-warning">
+        <strong>Your order @order.OrderNumber could not be placed - some items are no longer available.</strong>
+        @order.StockIssueMessage
+        Your payment method was not charged. To try again, adjust the quantities in your cart
+        and check out again.
+    </div>
+}
+else
+{
+    <div class="alert alert-danger">
+        <strong>Your order @order.OrderNumber was placed, but payment failed.</strong>
+        @order.DeclineReason
+        To try again, go back to your cart and check out with a different card - this order
+        will not retry automatically.
+    </div>
+}
 
 <p class="text-muted small">Placed @order.PlacedAtUtc.ToString("f") UTC</p>
 
@@ -33,6 +55,20 @@
                 <strong>@order.ShippingMethodName</strong> - @(order.ShippingCost == 0 ? "Free" : order.ShippingCost.ToString("0.00"))
             </div>
         </div>
+
+        @if (!stockFailed)
+        {
+            <div class="card mb-3">
+                <div class="card-body">
+                    <div class="text-muted small">Payment</div>
+                    <strong>@(paid ? "Paid" : "Declined")</strong>
+                    @if (!string.IsNullOrEmpty(order.CardBrand))
+                    {
+                        <span>- @order.CardBrand @order.MaskedCardNumber</span>
+                    }
+                </div>
+            </div>
+        }
 
         <div class="card">
             <div class="card-body">

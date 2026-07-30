@@ -181,18 +181,30 @@ in first, and anything already in your cart comes with you).
    with its real cost (already reflecting any coupon you've applied).
 3. **Review your order** - the real subtotal, discount, tax, and shipping
    for your chosen address, plus the grand total. This replaces the
-   Cart page's estimates with your actual numbers.
+   Cart page's estimates with your actual numbers. You'll also enter a
+   card number, cardholder name, expiry, and security code here - this is a
+   **simulated payment gateway**, so no real charge ever occurs; the page
+   tells you which test card number simulates a successful charge and
+   which one simulates a decline.
 4. **Place order** - re-checks everything one last time (your cart, stock,
    address, and shipping method) before confirming, since a few seconds can
-   pass between reviewing and clicking. If something in your cart no longer
-   has enough stock, you're sent back to your Cart page to fix it instead of
-   a confusing failure. If you click Place order more than once (or your
-   browser retries the request), you won't get charged twice or see a
-   different result the second time - you'll land on the same order either
-   way.
+   pass between reviewing and clicking. It then reserves the stock for each
+   item in your order before charging anything - if an item you ordered no
+   longer has enough stock available, your card is never charged. If
+   something in your cart no longer has enough stock at all, you're sent
+   back to your Cart page to fix it instead of a confusing failure. If you
+   click Place order more than once (or your browser retries the request),
+   you won't get charged twice or see a different result the second time -
+   you'll land on the same order either way.
 
-You'll then see your order confirmation, with a real order number and your
-cart emptied. **Payment processing, stock reservation, and a confirmation
-email arrive in a later milestone** - nothing is actually charged or
-shipped yet, but your order (address, shipping, items, and totals) has
-been placed and saved.
+You'll then see your order confirmation, one of three ways. If stock was
+reserved and the (simulated) charge succeeded, you'll see a real order
+number, your payment method, and your cart emptied. If the stock for
+something you ordered couldn't be secured at the last moment, you'll still
+see a real order number, but your card was never charged and the order is
+marked accordingly, naming what ran out - adjust the quantity in your cart
+and check out again. If your card was declined, you'll also see a real
+order number - the order was placed - but marked as payment failed, with
+the reason why; your cart is left exactly as it was so you can go back and
+check out again with a different card. **A confirmation email arrives in a
+later milestone.**
