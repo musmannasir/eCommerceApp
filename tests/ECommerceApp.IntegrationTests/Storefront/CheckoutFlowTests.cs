@@ -1,4 +1,5 @@
 using ECommerceApp.Domain.Catalog;
+using ECommerceApp.Domain.Orders;
 using ECommerceApp.Infrastructure.Persistence;
 using ECommerceApp.IntegrationTests.TestSupport;
 using FluentAssertions;
@@ -204,8 +205,56 @@ public class CheckoutFlowTests
         var placeOrderResponse = await PostPlaceOrderAsync(client, reviewPageHtml, reviewAddressId, shippingMethodId, idempotencyKey);
         var body = await placeOrderResponse.Content.ReadAsStringAsync();
 
-        body.Should().Contain("Your order details have been validated");
+        body.Should().Contain("has been placed");
         body.Should().Contain("117.00");
+        placeOrderResponse.RequestMessage!.RequestUri!.AbsolutePath.Should().MatchRegex(@"/Checkout/Confirmation/ORD-\d+");
+
+        // Placing the order clears the cart (Milestone 9.1) - it no longer
+        // silently keeps the just-purchased items around.
+        var cartPageHtml = await client.GetStringAsync("/Cart");
+        cartPageHtml.Should().Contain("Your cart is empty");
+    }
+
+    [Fact]
+    public async Task Placing_the_order_persists_an_order_with_the_snapshotted_address_and_items()
+    {
+        var product = await SeedProductAsync(price: 100m, weight: 2m);
+        // Distinct region (AZ) - see the comment in the insufficient-stock
+        // test above for why each test needs its own jurisdiction here.
+        await SeedTaxRateAsync("US", "AZ", "Standard", 10m);
+        await SeedShippingMethodAsync("US", "AZ", baseRate: 5m, ratePerKg: 1m);
+
+        var client = _fixture.Factory.CreateClient();
+        await client.RegisterViaFormAsync($"persist.{Guid.NewGuid():N}@example.com", "Str0ng!Passw0rd", "Persist", "Order");
+        await AddToCartAsync(client, product.Id);
+        var addressId = await CreateAddressAsync(client, "US", "AZ");
+
+        var (reviewPageHtml, _) = await ReachReviewAsync(client, addressId);
+        var (reviewAddressId, shippingMethodId, idempotencyKey) = ExtractReviewFormValues(reviewPageHtml);
+
+        var placeOrderResponse = await PostPlaceOrderAsync(client, reviewPageHtml, reviewAddressId, shippingMethodId, idempotencyKey);
+        placeOrderResponse.EnsureSuccessStatusCode();
+
+        using var scope = _fixture.Factory.Services.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var order = await dbContext.Orders.Include(o => o.Items).SingleAsync(o => o.IdempotencyKey == idempotencyKey);
+
+        order.OrderNumber.Should().MatchRegex(@"^ORD-\d{6}$");
+        order.Status.Should().Be(OrderStatus.Pending);
+        order.ShippingFullName.Should().Be("Jane Doe");
+        order.ShippingCity.Should().Be("Springfield");
+        order.ShippingCountryCode.Should().Be("US");
+        order.ShippingRegionCode.Should().Be("AZ");
+        order.Subtotal.Should().Be(100m);
+        order.Tax.Should().Be(10m);
+        order.ShippingCost.Should().Be(7m); // 5 + 1*2
+        order.GrandTotal.Should().Be(117m);
+
+        order.Items.Should().ContainSingle();
+        var item = order.Items.Single();
+        item.ProductId.Should().Be(product.Id);
+        item.Quantity.Should().Be(1);
+        item.UnitPrice.Should().Be(100m);
     }
 
     [Fact]
@@ -227,18 +276,22 @@ public class CheckoutFlowTests
 
         var firstResponse = await PostPlaceOrderAsync(client, reviewPageHtml, reviewAddressId, shippingMethodId, idempotencyKey);
         var firstBody = await firstResponse.Content.ReadAsStringAsync();
-        firstBody.Should().Contain("Your order details have been validated");
+        firstBody.Should().Contain("has been placed");
 
         // Stock now depletes - a fresh validation attempt would fail, but
         // resubmitting the exact same idempotency key should still replay
-        // the already-successful outcome rather than re-validating.
+        // the already-created order rather than re-validating.
         await SetInventoryOnHandAsync(product.Id, onHand: 0);
 
         var secondResponse = await PostPlaceOrderAsync(client, reviewPageHtml, reviewAddressId, shippingMethodId, idempotencyKey);
         var secondBody = await secondResponse.Content.ReadAsStringAsync();
 
-        secondBody.Should().Contain("Your order details have been validated");
+        secondBody.Should().Contain("has been placed");
         secondBody.Should().NotContain("exceed available stock");
+
+        // Both submissions resolve to the exact same order - a duplicate
+        // submission never creates a second order for the same idempotency key.
+        secondResponse.RequestMessage!.RequestUri!.AbsolutePath.Should().Be(firstResponse.RequestMessage!.RequestUri!.AbsolutePath);
     }
 
     [Fact]

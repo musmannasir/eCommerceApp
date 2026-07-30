@@ -1268,6 +1268,117 @@ original successful confirmation instead of re-validating and failing; and
 a stale/tampered shipping method id on submission correctly redirects back
 to the Shipping step.
 
+## Order entities & snapshots (Milestone 9.1)
+
+**Same brief-text gap as Milestones 6.1-8.3** - scope was agreed with the
+user as a concrete, non-speculative reading of the milestone name.
+
+**`Order`/`OrderItem` (`AuditableEntity`) mirror `PurchaseOrder`/
+`PurchaseOrderItem`'s shape** (Milestone 3.3) - a status workflow that needs
+`RowVersion` concurrency and an audit trail, the same reasoning that put
+`PurchaseOrder` on `AuditableEntity` rather than plain `BaseEntity`. An
+`Order` is created once `CheckoutController.PlaceOrder`'s existing
+validation (Milestone 8.3: cart availability, stock sufficiency, address
+ownership, shipping-method availability) succeeds - creating an order is a
+pure "freeze this already-checked data" operation, not a second round of
+validation.
+
+**Everything the customer saw at Review is frozen onto the row, not
+referenced live**:
+- The shipping address is fully copied onto `Order` (`ShippingFullName`,
+  `ShippingLine1`, etc.) rather than kept as an FK - `Address` (Milestone
+  8.1) has no soft delete by design, so a customer deleting an address
+  later must not corrupt a past order that used it.
+- The applied `ShippingMethod`/`Promotion` are both snapshotted by name and
+  amount (`ShippingMethodName`, `AppliedPromotionName`,
+  `PromotionDiscountAmount`) even though their ids are also kept as
+  `Restrict`-delete FKs - both are soft-delete-only (`AuditableEntity`), so
+  the FK stays valid forever; this mirrors `Cart.AppliedPromotionId`'s
+  existing `Restrict` choice exactly.
+- Each `OrderItem` snapshots `ProductName`/`Sku`/`VariantDescription`/
+  `ImagePath`/`UnitPrice` the same way `PurchaseOrderItem` snapshots
+  `ProductName`/`ProductSku` - "an order's history stays accurate even if
+  the product is later renamed, re-priced, or deactivated." `LineTotal` is
+  deliberately not a stored column (`Quantity * UnitPrice` is exact and
+  reproducible), matching `PurchaseOrderItem`'s own
+  `UnitCost * QuantityOrdered` convention of computing rather than storing.
+
+**`OrderStatus` deliberately has exactly one value, `Pending`, for now.**
+Payment outcomes (Milestone 9.2) and the fulfillment state machine
+(Milestone 10.3) each add their own states when they actually exist -
+pre-adding `Paid`/`Shipped`/`Cancelled`/etc. now, with no code that could
+ever set or act on them, would be speculative in exactly the way this
+project avoids elsewhere.
+
+**Stock is not reserved or deducted when an Order is created.**
+`IInventoryService.ReserveStockAsync` has existed since Milestone 3.1 but
+is completely unwired anywhere in the app - grepping the whole codebase
+turns up only its interface, implementation, and validators. Wiring it into
+order creation is explicitly Milestone 9.3's job ("Stock reservation
+transaction"). The existing stock-sufficiency check (Milestone 8.3) remains
+a best-effort guard only; two customers could still both successfully order
+the last unit until Milestone 9.3 closes this race with a real reservation
+inside the creation transaction - called out here honestly rather than
+glossed over, the same as Tax/Shipping's "estimate-only" boundaries were in
+Milestones 7.2/7.3.
+
+**Idempotency upgrades from `IMemoryCache` to the real thing.** Milestone
+8.3 left an explicit comment anticipating exactly this: *"a real
+idempotency table once Milestone 9.1's Order exists to anchor one to."*
+`Order.IdempotencyKey` (unique-indexed) now replaces the cache lookup
+entirely:
+- `PlaceOrder` first calls `IOrderService.GetByIdempotencyKeyAsync` - if an
+  order already exists for this key (and this user), it redirects straight
+  to that order's Confirmation page without re-validating anything.
+- If not, it revalidates (unchanged from Milestone 8.3) and calls
+  `CreateOrderAsync`, which itself re-checks for an existing order by the
+  same key before inserting - closing the gap between the controller's
+  check and the insert for a *sequential* duplicate.
+- For a genuine *concurrent* race (two identical submissions arriving at
+  the same time), the unique index on `IdempotencyKey` is the real
+  safety net: `SaveChangesAsync`'s `DbUpdateException` is caught, the table
+  is re-queried for the (now-existing) row created by the request that won
+  the race, and that order is returned as success rather than the second
+  request failing outright.
+- This is durable across app restarts and multiple instances, closing the
+  exact limitation Milestone 8.3 documented (`IMemoryCache` is
+  single-instance) - without needing a distributed cache, since the Order
+  itself is now the anchor.
+
+**The cart is cleared on successful order placement** (`ICartService
+.ClearCartAsync`, already existed since Milestone 6.1 for the "Clear cart"
+button) - a real, previously-flagged gap: before this milestone, "placing
+an order" left the cart's items sitting there since there was no real order
+to have moved them into.
+
+**Confirmation now reads a real order**: `GET /Checkout/Confirmation
+/{orderNumber}` (`IOrderService.GetByOrderNumberAsync`, ownership-scoped
+exactly like `IAddressService.GetByIdAsync` - another customer's order
+number returns `NotFound`, never their data) replaces the old
+`?key={idempotencyKey}` route that read from `IMemoryCache`. A missing or
+foreign order number redirects back to `/Checkout` with a "we couldn't find
+that order" message instead of erroring.
+
+**Deliberately out of scope**: no "My Orders" history page (Milestone
+11.1/11.2's job) and no admin order queue/detail UI (Milestone 10.1/10.2's
+job) - this milestone stops at the Confirmation page a customer lands on
+right after placing an order.
+
+**Bug caught proactively this time**: `TestDatabase.ResetAsync` needed
+`OrderItems`/`Orders` cleanup added *before* the tables they reference
+(`Products`, `ShippingMethods`, `Promotions`) - the exact "add a new table
+to this script the same milestone it's introduced" reminder already on
+file from Milestones 6.3, 7.3, and 8.1 (missed each of those three times).
+Caught and fixed here before it could cause the same cross-run FK-violation
+test failure Milestone 7.3's report described.
+
+**Manually verified end-to-end** against the real dev database (not just
+the InMemory/test-SQL-Server suites): address -> shipping -> review ->
+place order -> a real `ORD-000001`-style order number on Confirmation,
+confirmed via direct SQL query that the `Orders`/`OrderItems` rows persist
+the correct snapshotted address/shipping/item data - and that the cart is
+genuinely empty afterward.
+
 ## Framework version note
 
 The brief fixes the stack at **.NET 8**. This machine has only the **.NET 10**

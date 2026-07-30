@@ -197,25 +197,31 @@ wishlist. What's live today:
   Since Milestone 8.3, this step also renders a fresh, single-use
   idempotency token (a hidden field on the "Place order" form) and the
   button is enabled.
-- `POST /Checkout/PlaceOrder` (Milestone 8.3) - re-runs the full validation
-  battery (cart availability, stock sufficiency, address ownership,
-  shipping-method availability) one last time before submission, since any
-  of it can change in the time between viewing Review and clicking the
-  button; a stock or stale-shipping-method failure redirects back to
-  `/Cart` or the Shipping step respectively, same as the equivalent
-  `GET`-time guards. On success, caches the validated result (keyed by the
-  submitted idempotency token, 15-minute `IMemoryCache` TTL - see
-  `Architecture.md`) and redirects to `/Checkout/Confirmation?key=`.
-  Resubmitting the same token (double-click, back button, network retry)
-  replays the original cached outcome instead of re-validating - so a
-  submission that already succeeded can't be turned into a failure by
-  something changing afterward. `Order` entities still don't exist until
-  Milestone 9.1, so nothing is actually placed - see `Confirmation` below.
-- `GET /Checkout/Confirmation?key=` (Milestone 8.3) - reads the cached
-  result for the given idempotency token; explicit that "your order
-  details have been validated" is not a real placed order ("nothing has
-  been charged or shipped yet"). A missing/expired/foreign token redirects
-  back to `/Checkout` with a "checkout session has expired" message.
+- `POST /Checkout/PlaceOrder` (Milestone 8.3, now persisting a real `Order`
+  as of Milestone 9.1) - re-runs the full validation battery (cart
+  availability, stock sufficiency, address ownership, shipping-method
+  availability) one last time before submission, since any of it can
+  change in the time between viewing Review and clicking the button; a
+  stock or stale-shipping-method failure redirects back to `/Cart` or the
+  Shipping step respectively, same as the equivalent `GET`-time guards.
+  First checks for an existing order under the submitted idempotency token
+  (`IOrderService.GetByIdempotencyKeyAsync`) - if found, skips straight to
+  that order's Confirmation page without re-validating. Otherwise, on
+  success, creates the `Order`/`OrderItem` rows (`IOrderService
+  .CreateOrderAsync`, keyed by the idempotency token - unique-indexed, so a
+  genuine concurrent duplicate is caught by the database rather than a
+  check-then-act gap), clears the cart (Milestone 9.1 - previously it
+  silently wasn't), and redirects to `/Checkout/Confirmation/{orderNumber}`.
+  Stock is not reserved or deducted here - that's Milestone 9.3's job.
+- `GET /Checkout/Confirmation/{orderNumber}` (Milestone 8.3's cache-backed
+  page, now backed by a real persisted `Order` as of Milestone 9.1) -
+  `IOrderService.GetByOrderNumberAsync`, ownership-scoped exactly like
+  `IAddressService.GetByIdAsync` (another customer's order number returns
+  `NotFound`, never their data); explicit that payment processing, stock
+  reservation, and a confirmation email all arrive in later milestones -
+  "nothing has been charged or shipped yet." A missing or foreign order
+  number redirects back to `/Checkout` with a "we couldn't find that order"
+  message instead of erroring.
 - `GET /Account/Register`, `POST /Account/Register` - creates the account
   (assigned the `Customer` role), signs the user in immediately, then folds
   any guest cart into the new account (Milestone 6.2 - see

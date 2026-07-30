@@ -187,11 +187,12 @@ in first, and anything already in your cart comes with you).
    pass between reviewing and clicking. If something in your cart no longer
    has enough stock, you're sent back to your Cart page to fix it instead of
    a confusing failure. If you click Place order more than once (or your
-   browser retries the request), you won't be double-charged or see a
-   different result the second time - you'll land on the same confirmation
-   either way.
+   browser retries the request), you won't get charged twice or see a
+   different result the second time - you'll land on the same order either
+   way.
 
-You'll then see a confirmation of your order details. **Real order
-placement, payment, and a confirmation email arrive in a later milestone**
-- nothing is actually charged or shipped yet, but everything about your
-order (address, shipping, items, and totals) has been fully validated.
+You'll then see your order confirmation, with a real order number and your
+cart emptied. **Payment processing, stock reservation, and a confirmation
+email arrive in a later milestone** - nothing is actually charged or
+shipped yet, but your order (address, shipping, items, and totals) has
+been placed and saved.

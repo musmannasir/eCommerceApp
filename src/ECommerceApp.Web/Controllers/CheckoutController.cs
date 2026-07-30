@@ -1,17 +1,15 @@
 using System.Security.Claims;
 using ECommerceApp.Application.Addresses;
-using ECommerceApp.Application.Addresses.Models;
 using ECommerceApp.Application.Carts;
 using ECommerceApp.Application.Carts.Models;
 using ECommerceApp.Application.Checkout;
-using ECommerceApp.Application.Checkout.Models;
+using ECommerceApp.Application.Orders;
+using ECommerceApp.Application.Orders.Models;
 using ECommerceApp.Application.Shipping;
-using ECommerceApp.Application.Shipping.Models;
 using ECommerceApp.Web.Models.Checkout;
 using ECommerceApp.Web.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.Extensions.Caching.Memory;
 
 namespace ECommerceApp.Web.Controllers;
 
@@ -24,35 +22,34 @@ namespace ECommerceApp.Web.Controllers;
 /// their guest cart already merges into their account on login (Milestone
 /// 6.2), so nothing is lost.
 ///
-/// Milestone 8.3 adds server-side revalidation and idempotency to the final
-/// submission. Order placement itself is still out of scope - Order
-/// entities don't exist until Milestone 9.1 - so a successful PlaceOrder
-/// lands on a Confirmation page explicit that this is a validated, not yet
-/// persisted, outcome.
+/// Milestone 8.3 added server-side revalidation and idempotency to the final
+/// submission. Milestone 9.1 replaces the IMemoryCache-based idempotency
+/// token with a real, durable one - Order.IdempotencyKey (unique-indexed) -
+/// and PlaceOrder now actually persists an Order instead of caching a DTO.
+/// Stock is still not reserved or deducted here (Milestone 9.3's job); the
+/// stock-sufficiency check below remains a best-effort guard only.
 /// </summary>
 [Authorize]
 [Route("Checkout")]
 public class CheckoutController : Controller
 {
-    private static readonly TimeSpan IdempotencyTtl = TimeSpan.FromMinutes(15);
-
     private readonly ICartService _cartService;
     private readonly IAddressService _addressService;
     private readonly IShippingService _shippingService;
     private readonly ICheckoutCalculationService _checkoutCalculationService;
+    private readonly IOrderService _orderService;
     private readonly ICartOwnerAccessor _cartOwnerAccessor;
-    private readonly IMemoryCache _cache;
 
     public CheckoutController(
         ICartService cartService, IAddressService addressService, IShippingService shippingService,
-        ICheckoutCalculationService checkoutCalculationService, ICartOwnerAccessor cartOwnerAccessor, IMemoryCache cache)
+        ICheckoutCalculationService checkoutCalculationService, IOrderService orderService, ICartOwnerAccessor cartOwnerAccessor)
     {
         _cartService = cartService;
         _addressService = addressService;
         _shippingService = shippingService;
         _checkoutCalculationService = checkoutCalculationService;
+        _orderService = orderService;
         _cartOwnerAccessor = cartOwnerAccessor;
-        _cache = cache;
     }
 
     [HttpGet("")]
@@ -197,24 +194,25 @@ public class CheckoutController : Controller
     }
 
     /// <summary>
-    /// Final submission (Milestone 8.3) - re-runs every check Review already
-    /// performed, since time has passed since that page was rendered and any
-    /// of cart/stock/address/shipping could have changed, plus the one check
+    /// Final submission (Milestone 8.3, now persisting a real Order as of
+    /// Milestone 9.1) - re-runs every check Review already performed, since
+    /// time has passed since that page was rendered and any of
+    /// cart/stock/address/shipping could have changed, plus the one check
     /// Review doesn't do: stock sufficiency. A duplicate submission carrying
     /// the same idempotencyKey (double-click, browser back-button resubmit,
-    /// a retried request) skips straight to replaying the first successful
-    /// outcome instead of re-validating - re-validating twice could otherwise
-    /// show a confusing failure for a submission the customer already saw
-    /// succeed.
+    /// a retried request) skips straight to replaying the order already
+    /// created for that key instead of re-validating - re-validating twice
+    /// could otherwise show a confusing failure for a submission the
+    /// customer already saw succeed.
     /// </summary>
     [HttpPost("PlaceOrder")]
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> PlaceOrder(int addressId, int shippingMethodId, string idempotencyKey, CancellationToken cancellationToken)
     {
-        if (_cache.TryGetValue(IdempotencyCacheKey(idempotencyKey), out CachedCheckoutResult? cached) &&
-            cached is not null && cached.UserId == UserId)
+        var existingOrder = await _orderService.GetByIdempotencyKeyAsync(UserId, idempotencyKey, cancellationToken);
+        if (existingOrder.IsSuccess)
         {
-            return RedirectToAction(nameof(Confirmation), new { key = idempotencyKey });
+            return RedirectToAction(nameof(Confirmation), new { orderNumber = existingOrder.Value.OrderNumber });
         }
 
         var checkoutInput = await _cartService.GetCheckoutInputAsync(Owner, cancellationToken);
@@ -256,25 +254,32 @@ public class CheckoutController : Controller
 
         var items = cart.Items.Where(i => i.IsAvailable).ToList();
 
-        // IMemoryCache is single-instance - fine for this app today, but a
-        // multi-instance deployment would need a distributed cache (or a
-        // real idempotency table once Milestone 9.1's Order exists to
-        // anchor one to). Not worth building ahead of that real need now.
-        _cache.Set(IdempotencyCacheKey(idempotencyKey), new CachedCheckoutResult(UserId, address, shippingOption, items, calculation), IdempotencyTtl);
+        var orderResult = await _orderService.CreateOrderAsync(
+            new CreateOrderRequest(UserId, idempotencyKey, address, checkoutInput.Value.AppliedPromotionId, shippingOption, items, calculation),
+            cancellationToken);
 
-        return RedirectToAction(nameof(Confirmation), new { key = idempotencyKey });
+        if (orderResult.IsFailure)
+        {
+            TempData["Error"] = orderResult.FirstError.Message;
+            return RedirectToAction(nameof(Review), new { addressId, shippingMethodId });
+        }
+
+        await _cartService.ClearCartAsync(Owner, cancellationToken);
+
+        return RedirectToAction(nameof(Confirmation), new { orderNumber = orderResult.Value.OrderNumber });
     }
 
-    [HttpGet("Confirmation")]
-    public IActionResult Confirmation(string key)
+    [HttpGet("Confirmation/{orderNumber}")]
+    public async Task<IActionResult> Confirmation(string orderNumber, CancellationToken cancellationToken)
     {
-        if (!_cache.TryGetValue(IdempotencyCacheKey(key), out CachedCheckoutResult? entry) || entry is null || entry.UserId != UserId)
+        var orderResult = await _orderService.GetByOrderNumberAsync(UserId, orderNumber, cancellationToken);
+        if (orderResult.IsFailure)
         {
-            TempData["Error"] = "Your checkout session has expired. Please review your order again.";
+            TempData["Error"] = "We couldn't find that order.";
             return RedirectToAction(nameof(Index));
         }
 
-        return View(new CheckoutConfirmationPageViewModel(entry.Address, entry.ShippingOption, entry.Items, entry.Calculation));
+        return View(new CheckoutConfirmationPageViewModel(orderResult.Value));
     }
 
     private static bool HasStockIssues(CartDto cart) => cart.Items.Any(i => i.IsAvailable && i.QuantityExceedsStock);
@@ -284,11 +289,6 @@ public class CheckoutController : Controller
         var names = cart.Items.Where(i => i.IsAvailable && i.QuantityExceedsStock).Select(i => i.ProductName).Distinct();
         return $"Some items in your cart now exceed available stock: {string.Join(", ", names)}. Please update your cart before continuing to checkout.";
     }
-
-    private static string IdempotencyCacheKey(string idempotencyKey) => $"checkout-idempotency:{idempotencyKey}";
-
-    private sealed record CachedCheckoutResult(
-        string UserId, AddressDto Address, ShippingOptionDto ShippingOption, IReadOnlyList<CartItemDto> Items, CheckoutCalculationResult Calculation);
 
     private CartOwner Owner => _cartOwnerAccessor.TryGetOwner()!;
 
