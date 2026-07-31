@@ -363,6 +363,47 @@ public sealed class InventoryService : IInventoryService
         return Result.Success();
     }
 
+    public async Task<Result> ConsumeReservationAsync(int reservationId, CancellationToken cancellationToken = default)
+    {
+        var reservation = await _dbContext.InventoryReservations.FirstOrDefaultAsync(r => r.Id == reservationId, cancellationToken);
+        if (reservation is null)
+        {
+            return Result.Failure(Error.NotFound("inventory.reservation_not_found", "Reservation not found."));
+        }
+
+        if (reservation.Status != ReservationStatus.Active)
+        {
+            return Result.Failure(Error.Validation("inventory.reservation_not_active", "Only an active reservation can be consumed."));
+        }
+
+        var item = await _dbContext.InventoryItems.FirstOrDefaultAsync(i => i.Id == reservation.InventoryItemId, cancellationToken);
+        if (item is null)
+        {
+            return Result.Failure(Error.NotFound("inventory.item_not_found", "Inventory item not found."));
+        }
+
+        var utcNow = _clock.UtcNow;
+        item.QuantityOnHand -= reservation.Quantity;
+        item.QuantityReserved -= reservation.Quantity;
+        item.LastStockUpdateUtc = utcNow;
+        item.StockStatus = ComputeStockStatus(item);
+
+        reservation.Status = ReservationStatus.Consumed;
+
+        await using var transaction = await BeginTransactionIfSupportedAsync(cancellationToken);
+
+        await _dbContext.SaveChangesAsync(cancellationToken);
+        AddMovement(item, StockMovementType.SaleCompletion, -reservation.Quantity, "Shipped", nameof(InventoryReservation), reservation.Id, utcNow);
+        await _dbContext.SaveChangesAsync(cancellationToken);
+
+        if (transaction is not null)
+        {
+            await transaction.CommitAsync(cancellationToken);
+        }
+
+        return Result.Success();
+    }
+
     public async Task<Result<PagedResult<StockMovementDto>>> GetMovementHistoryAsync(int inventoryItemId, PagedQuery query, CancellationToken cancellationToken = default)
     {
         if (!await _dbContext.InventoryItems.AnyAsync(i => i.Id == inventoryItemId, cancellationToken))

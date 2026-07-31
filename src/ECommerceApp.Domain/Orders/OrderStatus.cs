@@ -9,9 +9,21 @@ namespace ECommerceApp.Domain.Orders;
 /// stock is never charged at all; this is a genuinely different outcome
 /// from a declined card (the remedy is picking different items/quantities,
 /// not a different payment method), which is why it's its own value rather
-/// than reusing <see cref="PaymentFailed"/>. The fulfillment state machine
-/// (Milestone 10.3) adds its own states when it exists; adding them now
-/// would be speculative.
+/// than reusing <see cref="PaymentFailed"/>. Milestone 10.2 adds
+/// <see cref="Cancelled"/> - the one order-lifecycle operation available
+/// before Milestone 10.3 builds a real fulfillment/shipment state machine;
+/// cancelling releases the order's stock reservations but does not process
+/// a refund (Milestone 13.3's job, a separate transaction). Milestone 10.3
+/// adds <see cref="Shipped"/>/<see cref="Delivered"/> - shipping consumes
+/// the order's stock reservation for good (Milestone 3.1's
+/// <see cref="Inventory.ReservationStatus.Consumed"/>/<see cref="Inventory.StockMovementType.SaleCompletion"/>,
+/// pre-provisioned but unused until now) and records a <see cref="Shipment"/>;
+/// once shipped, an order can no longer be cancelled - there is no
+/// return/refund flow yet, so a mis-shipped order stays exactly as it is.
+/// See <see cref="OrderStatusTransitions"/> for the single, centralized
+/// definition of which of these transitions is legal from which state -
+/// every status change in <c>OrderService</c> goes through it rather than
+/// each operation checking its own ad-hoc condition.
 /// </summary>
 public enum OrderStatus
 {
@@ -19,4 +31,7 @@ public enum OrderStatus
     Paid,
     PaymentFailed,
     StockReservationFailed,
+    Cancelled,
+    Shipped,
+    Delivered,
 }

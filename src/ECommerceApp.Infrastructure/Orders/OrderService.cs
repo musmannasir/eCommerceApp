@@ -198,6 +198,35 @@ public sealed class OrderService : IOrderService
         return Result.Success(ToDto(order));
     }
 
+    public async Task<Result<PagedResult<OrderListItemDto>>> GetPagedAsync(OrderQuery query, CancellationToken cancellationToken = default)
+    {
+        var orders = _dbContext.Orders.Include(o => o.Items).AsQueryable();
+
+        if (!string.IsNullOrWhiteSpace(query.Search))
+        {
+            orders = orders.Where(o => o.OrderNumber.Contains(query.Search) || o.ShippingFullName.Contains(query.Search));
+        }
+
+        if (!string.IsNullOrWhiteSpace(query.Status) && Enum.TryParse<OrderStatus>(query.Status, out var status))
+        {
+            orders = orders.Where(o => o.Status == status);
+        }
+
+        orders = orders.OrderByDescending(o => o.Id);
+
+        var totalCount = await orders.CountAsync(cancellationToken);
+        var page = await orders
+            .Skip((query.Page - 1) * query.PageSize)
+            .Take(query.PageSize)
+            .AsNoTracking()
+            .ToListAsync(cancellationToken);
+
+        var items = page.Select(o => new OrderListItemDto(
+            o.Id, o.OrderNumber, o.ShippingFullName, o.Status.ToString(), o.Items.Count, o.GrandTotal, o.CreatedAtUtc)).ToList();
+
+        return Result.Success(new PagedResult<OrderListItemDto>(items, totalCount, query.Page, query.PageSize));
+    }
+
     public async Task<Result<OrderDto>> GetByIdempotencyKeyAsync(string userId, string idempotencyKey, CancellationToken cancellationToken = default)
     {
         var order = await FindByIdempotencyKeyAsync(userId, idempotencyKey, cancellationToken);
@@ -211,6 +240,7 @@ public sealed class OrderService : IOrderService
         var order = await _dbContext.Orders
             .Include(o => o.Items)
             .Include(o => o.Payment)
+            .Include(o => o.Shipment)
             .FirstOrDefaultAsync(o => o.OrderNumber == orderNumber && o.UserId == userId, cancellationToken);
 
         return order is null
@@ -218,10 +248,147 @@ public sealed class OrderService : IOrderService
             : Result.Success(ToDto(order));
     }
 
+    public async Task<Result<OrderDto>> GetByIdAsync(int id, CancellationToken cancellationToken = default)
+    {
+        var order = await _dbContext.Orders
+            .Include(o => o.Items)
+            .Include(o => o.Payment)
+            .Include(o => o.Shipment)
+            .FirstOrDefaultAsync(o => o.Id == id, cancellationToken);
+
+        return order is null
+            ? Result.Failure<OrderDto>(Error.NotFound("order.not_found", "Order not found."))
+            : Result.Success(ToDto(order));
+    }
+
+    public async Task<Result<OrderDto>> CancelAsync(int id, CancellationToken cancellationToken = default)
+    {
+        var order = await _dbContext.Orders
+            .Include(o => o.Items)
+            .Include(o => o.Payment)
+            .Include(o => o.Shipment)
+            .FirstOrDefaultAsync(o => o.Id == id, cancellationToken);
+
+        if (order is null)
+        {
+            return Result.Failure<OrderDto>(Error.NotFound("order.not_found", "Order not found."));
+        }
+
+        if (!OrderStatusTransitions.CanTransition(order.Status, OrderStatus.Cancelled))
+        {
+            return Result.Failure<OrderDto>(Error.Validation(
+                "order.not_cancellable", "Only a paid order can be cancelled."));
+        }
+
+        var activeReservations = await _dbContext.InventoryReservations
+            .Where(r => r.ReferenceType == "Order" && r.ReferenceId == order.Id.ToString() && r.Status == ReservationStatus.Active)
+            .Select(r => r.Id)
+            .ToListAsync(cancellationToken);
+
+        foreach (var reservationId in activeReservations)
+        {
+            await _inventoryService.ReleaseReservationAsync(reservationId, cancellationToken);
+        }
+
+        order.Status = OrderStatus.Cancelled;
+        await _dbContext.SaveChangesAsync(cancellationToken);
+
+        return Result.Success(ToDto(order));
+    }
+
+    public async Task<Result<OrderDto>> UpdateAdminNotesAsync(int id, string? notes, CancellationToken cancellationToken = default)
+    {
+        var order = await _dbContext.Orders
+            .Include(o => o.Items)
+            .Include(o => o.Payment)
+            .Include(o => o.Shipment)
+            .FirstOrDefaultAsync(o => o.Id == id, cancellationToken);
+
+        if (order is null)
+        {
+            return Result.Failure<OrderDto>(Error.NotFound("order.not_found", "Order not found."));
+        }
+
+        order.AdminNotes = notes;
+        await _dbContext.SaveChangesAsync(cancellationToken);
+
+        return Result.Success(ToDto(order));
+    }
+
+    public async Task<Result<OrderDto>> ShipAsync(int id, ShipOrderRequest request, CancellationToken cancellationToken = default)
+    {
+        var order = await _dbContext.Orders
+            .Include(o => o.Items)
+            .Include(o => o.Payment)
+            .Include(o => o.Shipment)
+            .FirstOrDefaultAsync(o => o.Id == id, cancellationToken);
+
+        if (order is null)
+        {
+            return Result.Failure<OrderDto>(Error.NotFound("order.not_found", "Order not found."));
+        }
+
+        if (!OrderStatusTransitions.CanTransition(order.Status, OrderStatus.Shipped))
+        {
+            return Result.Failure<OrderDto>(Error.Validation(
+                "order.not_shippable", "Only a paid order can be shipped."));
+        }
+
+        var activeReservations = await _dbContext.InventoryReservations
+            .Where(r => r.ReferenceType == "Order" && r.ReferenceId == order.Id.ToString() && r.Status == ReservationStatus.Active)
+            .Select(r => r.Id)
+            .ToListAsync(cancellationToken);
+
+        foreach (var reservationId in activeReservations)
+        {
+            await _inventoryService.ConsumeReservationAsync(reservationId, cancellationToken);
+        }
+
+        var utcNow = _clock.UtcNow;
+        order.Shipment = new Shipment
+        {
+            OrderId = order.Id,
+            Carrier = request.Carrier,
+            TrackingNumber = request.TrackingNumber,
+            ShippedAtUtc = utcNow,
+        };
+        order.Status = OrderStatus.Shipped;
+        await _dbContext.SaveChangesAsync(cancellationToken);
+
+        return Result.Success(ToDto(order));
+    }
+
+    public async Task<Result<OrderDto>> MarkDeliveredAsync(int id, CancellationToken cancellationToken = default)
+    {
+        var order = await _dbContext.Orders
+            .Include(o => o.Items)
+            .Include(o => o.Payment)
+            .Include(o => o.Shipment)
+            .FirstOrDefaultAsync(o => o.Id == id, cancellationToken);
+
+        if (order is null)
+        {
+            return Result.Failure<OrderDto>(Error.NotFound("order.not_found", "Order not found."));
+        }
+
+        if (!OrderStatusTransitions.CanTransition(order.Status, OrderStatus.Delivered))
+        {
+            return Result.Failure<OrderDto>(Error.Validation(
+                "order.not_deliverable", "Only a shipped order can be marked delivered."));
+        }
+
+        order.Shipment!.DeliveredAtUtc = _clock.UtcNow;
+        order.Status = OrderStatus.Delivered;
+        await _dbContext.SaveChangesAsync(cancellationToken);
+
+        return Result.Success(ToDto(order));
+    }
+
     private Task<Order?> FindByIdempotencyKeyAsync(string userId, string idempotencyKey, CancellationToken cancellationToken) =>
         _dbContext.Orders
             .Include(o => o.Items)
             .Include(o => o.Payment)
+            .Include(o => o.Shipment)
             .FirstOrDefaultAsync(o => o.IdempotencyKey == idempotencyKey && o.UserId == userId, cancellationToken);
 
     /// <summary>
@@ -251,6 +418,8 @@ public sealed class OrderService : IOrderService
         order.Payment?.Status.ToString() ?? order.Status.ToString(),
         order.Payment?.MaskedCardNumber, order.Payment?.CardBrand, order.Payment?.DeclineReason,
         order.StockIssueMessage,
+        order.AdminNotes,
+        order.Shipment?.Carrier, order.Shipment?.TrackingNumber, order.Shipment?.ShippedAtUtc, order.Shipment?.DeliveredAtUtc,
         order.Items.Select(ToItemDto).ToList());
 
     private static OrderItemDto ToItemDto(OrderItem item) => new(

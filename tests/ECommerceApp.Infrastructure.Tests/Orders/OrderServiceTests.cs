@@ -207,6 +207,196 @@ public class OrderServiceTests : IDisposable
         item2.Value.QuantityReserved.Should().Be(0);
     }
 
+    [Fact]
+    public async Task GetPagedAsync_returns_orders_newest_first()
+    {
+        var first = await _harness.OrderService.CreateOrderAsync(StandardRequest("user-1", Guid.NewGuid().ToString("N")));
+        var second = await _harness.OrderService.CreateOrderAsync(StandardRequest("user-1", Guid.NewGuid().ToString("N")));
+
+        var result = await _harness.OrderService.GetPagedAsync(new OrderQuery());
+
+        result.Value.Items[0].Id.Should().Be(second.Value.Id);
+        result.Value.Items[1].Id.Should().Be(first.Value.Id);
+    }
+
+    [Fact]
+    public async Task GetPagedAsync_search_matches_order_number_or_customer_name()
+    {
+        var request = StandardRequest("user-1", Guid.NewGuid().ToString("N")) with
+        {
+            Address = StandardRequest("user-1", "unused").Address with { FullName = "Alice Anderson" },
+        };
+        var created = await _harness.OrderService.CreateOrderAsync(request);
+
+        var byName = await _harness.OrderService.GetPagedAsync(new OrderQuery { Search = "Alice" });
+        var byOrderNumber = await _harness.OrderService.GetPagedAsync(new OrderQuery { Search = created.Value.OrderNumber });
+        var byUnrelatedTerm = await _harness.OrderService.GetPagedAsync(new OrderQuery { Search = "no-such-customer" });
+
+        byName.Value.Items.Should().Contain(i => i.Id == created.Value.Id);
+        byOrderNumber.Value.Items.Should().ContainSingle(i => i.Id == created.Value.Id);
+        byUnrelatedTerm.Value.Items.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task GetPagedAsync_filters_by_status()
+    {
+        var paid = await _harness.OrderService.CreateOrderAsync(StandardRequest("user-1", Guid.NewGuid().ToString("N")));
+        var (productId, _) = await SeedInventoryItemAsync(quantity: 1, reorderLevel: 1, allowBackorder: false);
+        var stockFailed = await _harness.OrderService.CreateOrderAsync(
+            StandardRequest("user-1", Guid.NewGuid().ToString("N")) with { Items = OneLine(productId, quantity: 5) });
+
+        var paidOnly = await _harness.OrderService.GetPagedAsync(new OrderQuery { Status = nameof(OrderStatus.Paid) });
+        var stockFailedOnly = await _harness.OrderService.GetPagedAsync(new OrderQuery { Status = nameof(OrderStatus.StockReservationFailed) });
+
+        paidOnly.Value.Items.Should().Contain(i => i.Id == paid.Value.Id).And.NotContain(i => i.Id == stockFailed.Value.Id);
+        stockFailedOnly.Value.Items.Should().Contain(i => i.Id == stockFailed.Value.Id).And.NotContain(i => i.Id == paid.Value.Id);
+    }
+
+    [Fact]
+    public async Task GetPagedAsync_paginates_correctly()
+    {
+        for (var i = 0; i < 3; i++)
+        {
+            await _harness.OrderService.CreateOrderAsync(StandardRequest("user-1", Guid.NewGuid().ToString("N")));
+        }
+
+        var firstPage = await _harness.OrderService.GetPagedAsync(new OrderQuery { Page = 1, PageSize = 2 });
+        var secondPage = await _harness.OrderService.GetPagedAsync(new OrderQuery { Page = 2, PageSize = 2 });
+
+        firstPage.Value.Items.Should().HaveCount(2);
+        firstPage.Value.TotalCount.Should().Be(3);
+        secondPage.Value.Items.Should().HaveCount(1);
+    }
+
+    [Fact]
+    public async Task GetByIdAsync_returns_an_order_regardless_of_which_user_placed_it()
+    {
+        var created = await _harness.OrderService.CreateOrderAsync(StandardRequest("user-1", Guid.NewGuid().ToString("N")));
+
+        var result = await _harness.OrderService.GetByIdAsync(created.Value.Id);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.OrderNumber.Should().Be(created.Value.OrderNumber);
+    }
+
+    [Fact]
+    public async Task GetByIdAsync_returns_not_found_for_an_unknown_id()
+    {
+        var result = await _harness.OrderService.GetByIdAsync(999999);
+
+        result.IsFailure.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task CancelAsync_releases_the_reservation_and_marks_a_paid_order_cancelled()
+    {
+        var (productId, itemId) = await SeedInventoryItemAsync(quantity: 20, reorderLevel: 2);
+        var created = await _harness.OrderService.CreateOrderAsync(
+            StandardRequest("user-1", Guid.NewGuid().ToString("N")) with { Items = OneLine(productId, quantity: 5) });
+        created.Value.Status.Should().Be(nameof(OrderStatus.Paid));
+
+        var result = await _harness.OrderService.CancelAsync(created.Value.Id);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Status.Should().Be(nameof(OrderStatus.Cancelled));
+        var item = await _harness.InventoryService.GetInventoryItemByIdAsync(itemId);
+        item.Value.QuantityReserved.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task CancelAsync_rejects_an_order_that_is_not_paid()
+    {
+        var created = await _harness.OrderService.CreateOrderAsync(StandardRequest("user-1", Guid.NewGuid().ToString("N")) with
+        {
+            Payment = StandardPayment() with { CardNumber = "4000000000000002" },
+        });
+        created.Value.Status.Should().Be(nameof(OrderStatus.PaymentFailed));
+
+        var result = await _harness.OrderService.CancelAsync(created.Value.Id);
+
+        result.IsFailure.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task UpdateAdminNotesAsync_saves_and_returns_the_note()
+    {
+        var created = await _harness.OrderService.CreateOrderAsync(StandardRequest("user-1", Guid.NewGuid().ToString("N")));
+
+        var result = await _harness.OrderService.UpdateAdminNotesAsync(created.Value.Id, "Called customer to confirm address.");
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.AdminNotes.Should().Be("Called customer to confirm address.");
+    }
+
+    [Fact]
+    public async Task ShipAsync_consumes_the_reservation_and_marks_a_paid_order_shipped()
+    {
+        var (productId, itemId) = await SeedInventoryItemAsync(quantity: 20, reorderLevel: 2);
+        var created = await _harness.OrderService.CreateOrderAsync(
+            StandardRequest("user-1", Guid.NewGuid().ToString("N")) with { Items = OneLine(productId, quantity: 5) });
+        created.Value.Status.Should().Be(nameof(OrderStatus.Paid));
+
+        var result = await _harness.OrderService.ShipAsync(created.Value.Id, new ShipOrderRequest("UPS", "1Z999AA10123456784"));
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Status.Should().Be(nameof(OrderStatus.Shipped));
+        result.Value.Carrier.Should().Be("UPS");
+        result.Value.TrackingNumber.Should().Be("1Z999AA10123456784");
+        result.Value.ShippedAtUtc.Should().NotBeNull();
+
+        var item = await _harness.InventoryService.GetInventoryItemByIdAsync(itemId);
+        item.Value.QuantityReserved.Should().Be(0);
+        item.Value.QuantityOnHand.Should().Be(15);
+    }
+
+    [Fact]
+    public async Task ShipAsync_rejects_an_order_that_is_not_paid()
+    {
+        var created = await _harness.OrderService.CreateOrderAsync(StandardRequest("user-1", Guid.NewGuid().ToString("N")) with
+        {
+            Payment = StandardPayment() with { CardNumber = "4000000000000002" },
+        });
+        created.Value.Status.Should().Be(nameof(OrderStatus.PaymentFailed));
+
+        var result = await _harness.OrderService.ShipAsync(created.Value.Id, new ShipOrderRequest("UPS", "1Z999AA10123456784"));
+
+        result.IsFailure.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task MarkDeliveredAsync_marks_a_shipped_order_delivered()
+    {
+        var created = await _harness.OrderService.CreateOrderAsync(StandardRequest("user-1", Guid.NewGuid().ToString("N")));
+        await _harness.OrderService.ShipAsync(created.Value.Id, new ShipOrderRequest("UPS", "1Z999AA10123456784"));
+
+        var result = await _harness.OrderService.MarkDeliveredAsync(created.Value.Id);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Status.Should().Be(nameof(OrderStatus.Delivered));
+        result.Value.DeliveredAtUtc.Should().NotBeNull();
+    }
+
+    [Fact]
+    public async Task MarkDeliveredAsync_rejects_an_order_that_has_not_shipped()
+    {
+        var created = await _harness.OrderService.CreateOrderAsync(StandardRequest("user-1", Guid.NewGuid().ToString("N")));
+
+        var result = await _harness.OrderService.MarkDeliveredAsync(created.Value.Id);
+
+        result.IsFailure.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task CancelAsync_rejects_an_order_that_has_already_shipped()
+    {
+        var created = await _harness.OrderService.CreateOrderAsync(StandardRequest("user-1", Guid.NewGuid().ToString("N")));
+        await _harness.OrderService.ShipAsync(created.Value.Id, new ShipOrderRequest("UPS", "1Z999AA10123456784"));
+
+        var result = await _harness.OrderService.CancelAsync(created.Value.Id);
+
+        result.IsFailure.Should().BeTrue();
+    }
+
     private static List<CartItemDto> OneLine(int productId, int quantity) => new()
     {
         new(1, productId, null, "Widget", "widget", null, "SKU-1", null, 100m, null, null, quantity, 100m * quantity,

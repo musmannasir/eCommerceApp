@@ -41,6 +41,17 @@ namespace ECommerceApp.Domain.Orders;
 /// order's reservations are released too - only a genuinely
 /// <see cref="OrderStatus.Paid"/> order keeps them Active, since holding
 /// real inventory for an order nobody actually paid for would be wrong.
+/// Milestone 10.2 adds an admin order detail page and the one operation
+/// available before a real fulfillment state machine exists (Milestone
+/// 10.3): cancelling a <see cref="OrderStatus.Paid"/> order, which releases
+/// its reservations and moves it to <see cref="OrderStatus.Cancelled"/>
+/// without processing a refund (a separate transaction, Milestone 13.3).
+/// Milestone 10.3 adds <see cref="Shipment"/> - shipping a
+/// <see cref="OrderStatus.Paid"/> order consumes its stock reservation for
+/// good (rather than merely releasing it) and moves it to
+/// <see cref="OrderStatus.Shipped"/>, after which it can no longer be
+/// cancelled. See <see cref="OrderStatusTransitions"/> for the single
+/// definition of which status changes are legal.
 /// </summary>
 public class Order : AuditableEntity
 {
@@ -74,8 +85,12 @@ public class Order : AuditableEntity
 
     public string? StockIssueMessage { get; set; }
 
+    /// <summary>Staff-only annotation (Milestone 10.2) - never shown to the customer.</summary>
+    public string? AdminNotes { get; set; }
+
     public ShippingMethod? ShippingMethod { get; set; }
     public Promotion? Promotion { get; set; }
     public ICollection<OrderItem> Items { get; set; } = new List<OrderItem>();
     public Payment? Payment { get; set; }
+    public Shipment? Shipment { get; set; }
 }
