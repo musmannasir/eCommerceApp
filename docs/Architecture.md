@@ -1563,6 +1563,164 @@ reserve this quantity," zero `Payment` rows were created, both warehouses'
 `QuantityReserved` remained at 0, and the cart was not cleared - all
 confirmed via direct SQL query.
 
+## Order queue UI (Milestone 10.1)
+
+**Same brief-text gap as Milestones 6.1-9.3** - scope was agreed with the
+user as a concrete, non-speculative reading of the milestone name: a
+read-only, paginated admin list of every placed order, mirroring
+`PurchaseOrdersController`'s Index exactly (`IOrderService.GetPagedAsync`
+follows `PurchaseOrderService.GetPagedAsync`'s shape line-for-line - same
+`Contains` search over two fields, same `Enum.TryParse` status filter, same
+`OrderByDescending(o => o.Id)` newest-first ordering, same
+`PagedResult<T>`). `OrderListItemDto` is deliberately lighter than
+`OrderDto` - order number, customer name, item count, grand total, status,
+placed date - the same relationship `PurchaseOrderListItemDto` has to a
+full purchase order.
+
+**No per-order detail page or actions exist yet.** Approving, shipping,
+refunding, or even just viewing one order's full detail is explicitly
+Milestone 10.2's job ("Order detail & operations") - this milestone stops
+at the browsable list, the same restraint Milestone 4.1 showed leaving
+"Best sellers" and other sections as honest placeholders pending later
+milestones that actually own them.
+
+**Two things that have existed, unused, since earlier milestones are
+switched on here for the first time.** `Policies.CanManageOrders`
+(`Program.cs`, roles `OrderManager`/`CustomerSupport`) has been registered
+since Milestone 1's auth policy setup but had no controller using it until
+`OrdersController`. The "Orders" sidebar entry in `_AdminLayout.cshtml` has
+been a disabled placeholder (`<span class="nav-link disabled">`) since
+Milestone 4.1's admin layout - it's now a real link.
+
+**The "Customer" column is `Order.ShippingFullName`**, not an
+`AspNetUsers` join. The order already snapshots the customer's name at
+purchase time (Milestone 9.1), so there's no need to join Identity's user
+table from the Application/Infrastructure order-listing path - the same
+denormalized-field convention `PurchaseOrderListItemDto` uses for
+`Supplier.Name` rather than re-resolving it from the `Supplier` table on
+every list read.
+
+**Manually verified** against the real dev database: all four existing
+orders - including `ORD-000001`, a `Pending` order created back in
+Milestone 9.1 before Milestone 9.2 introduced real payment outcomes -
+rendered correctly, newest-first by id; filtering by `status=Paid` and
+searching by a customer's first name (`Jane`) both correctly narrowed the
+list to just the matching order.
+
+## Order detail & operations (Milestone 10.2)
+
+**Same brief-text gap as Milestones 6.1-10.1** - scope was agreed with the
+user as a concrete, non-speculative reading of the milestone name: a full
+order detail page (`IOrderService.GetByIdAsync`, deliberately not
+ownership-scoped like `GetByOrderNumberAsync` - an admin can open any
+customer's order) plus the one lifecycle operation genuinely available
+before Milestone 10.3 builds a real fulfillment/shipment state machine.
+
+**`CancelAsync` only accepts a `Paid` order.** A `PaymentFailed` or
+`StockReservationFailed` order never held a reservation and was never
+charged - there is nothing to reverse, so cancelling one is rejected with
+`order.not_cancellable`. Cancelling a `Paid` order queries
+`InventoryReservations` directly by `ReferenceType == "Order"` /
+`ReferenceId == order.Id.ToString()` (the same reference pair
+`CreateOrderAsync` writes when it reserves stock, Milestone 9.3) for any
+still-`Active` rows, releases each via the existing
+`IInventoryService.ReleaseReservationAsync`, then moves the order to the
+new terminal `OrderStatus.Cancelled`. **Deliberately does not process a
+refund** - that is Milestone 13.3's job, a separate transaction, the same
+"a correction is a new transaction, not an edit to the original" precedent
+`Payment`'s design already established in Milestone 9.2.
+
+**`Order.AdminNotes`** is a free-text, staff-only field (2000-char limit,
+mirrors `PurchaseOrder.Notes`'s convention) editable from the detail page
+via its own `UpdateAdminNotesAsync` action - intentionally separate from
+`CancelAsync` so saving a note never requires (or risks) also touching
+order status. It is never rendered anywhere a customer can see it.
+
+**The Payment card is hidden entirely for `StockReservationFailed`** on
+the detail page, the same reasoning Confirmation's own outcome banner
+already uses (Milestone 9.3) - no charge was ever attempted, so showing a
+payment status line would be misleading rather than simply absent.
+
+**Manually verified** against the real dev database: opened a real `Paid`
+order's detail page, saved an internal note and confirmed it survived a
+page reload, cancelled the order and confirmed both the `Cancelled` status
+badge and the disappearance of the Cancel button on reload, and confirmed
+a `PaymentFailed` order's detail page correctly shows no Cancel button at
+all.
+
+## Shipment & centralized state machine (Milestone 10.3)
+
+**Same brief-text gap as Milestones 6.1-10.2** - scope was agreed with the
+user as a concrete, non-speculative reading of the milestone name, which
+names two distinct pieces of work: a real shipment record, and centralizing
+what had until now been scattered ad-hoc status checks.
+
+**`OrderStatusTransitions.CanTransition(from, to)`** (Domain layer, pure -
+no `ApplicationDbContext`, no I/O) is the single definition of the legal
+`OrderStatus` graph:
+
+```
+Pending  -> Paid, PaymentFailed, StockReservationFailed
+Paid     -> Cancelled, Shipped
+Shipped  -> Delivered
+(everything else terminal)
+```
+
+Before this milestone, `CancelAsync` (Milestone 10.2) checked
+`order.Status != OrderStatus.Paid` directly - a second ad-hoc check, had
+Milestone 10.3 not centralized it, would have needed to appear in
+`ShipAsync` too, and a third in `MarkDeliveredAsync`. All three now call
+`OrderStatusTransitions.CanTransition` instead, so the legal-transition
+graph exists in exactly one place - the thing "centralized state machine"
+in the milestone's own name asks for. `CreateOrderAsync`'s initial
+Pending-to-{Paid, PaymentFailed, StockReservationFailed} fan-out is not
+routed through the same check: it originates every order at `Pending`
+by construction, so the transition is always valid by definition - adding
+a runtime guard there would be validating a condition that can't happen.
+
+**Shipping consumes the reservation for good - the exact gap Milestone
+3.1 pre-provisioned for.** `ReservationStatus.Consumed` and
+`StockMovementType.SaleCompletion` have existed in their enums since
+Milestone 3.1 but had no code path that ever produced them - every
+previous consumer (`ReleaseReservationAsync`, used by Milestones 9.3 and
+10.2) only ever *released* a reservation back to available stock.
+`IInventoryService.ConsumeReservationAsync` is the first caller of either:
+it mirrors `ReleaseReservationAsync`'s exact shape (find the active
+reservation, find its `InventoryItem`, update, record a movement, commit)
+but the semantics differ in one key way - `QuantityOnHand` actually
+decreases (the item has physically left the warehouse), whereas
+`QuantityAvailable` is unaffected by consumption (it already excluded the
+reserved quantity before the shipment happened). `ShipAsync` looks up
+every still-`Active` `InventoryReservation` for the order (same
+`ReferenceType == "Order"` / `ReferenceId` pair `CreateOrderAsync`
+originally wrote) and consumes each one.
+
+**A `Shipment` is created, not merely a status flip.** One row per order
+(a v1 scope choice mirroring `Payment`'s "one charge per order"), storing
+`Carrier`/`TrackingNumber`/`ShippedAtUtc`/`DeliveredAtUtc`. It derives from
+`AuditableEntity` rather than an immutable insert-once type like `Payment`
+or `StockMovement`, because - like `InventoryReservation` - it has a real
+two-state mutable lifecycle (shipped, then later delivered), not a single
+known-at-creation outcome.
+
+**Once `Shipped`, an order can no longer be `Cancelled`.** This isn't a
+special case bolted onto `CancelAsync` - it falls straight out of the
+transition table above, since `Paid` is the only state `Cancelled` is
+reachable from and shipping moves the order out of `Paid`. There is no
+return/refund flow yet (a later milestone's job), so a mis-shipped order
+simply stays exactly as it is; the Details page's Cancel button and Ship
+form both disappear once an order leaves `Paid`, replaced by "Mark
+delivered" once it's `Shipped`, and by nothing at all once `Delivered`.
+
+**Manually verified** against the real dev database: placed a fresh order
+(`ORD-000005`) through the real storefront checkout, confirmed it landed
+`Paid`, shipped it with a carrier and tracking number and confirmed via
+direct SQL query that the reservation's `InventoryItem` row had its
+`QuantityOnHand` actually decrease (not just `QuantityReserved` clear), the
+reservation itself flipped to `Consumed`, and a `SaleCompletion` stock
+movement was recorded - then marked it delivered and confirmed the Details
+page correctly shows no further actions for a `Delivered` order.
+
 ## Framework version note
 
 The brief fixes the stack at **.NET 8**. This machine has only the **.NET 10**

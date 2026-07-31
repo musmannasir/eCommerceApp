@@ -34,6 +34,7 @@ public class OrderConfiguration : IEntityTypeConfiguration<Order>
         builder.Property(o => o.GrandTotal).HasColumnType("decimal(18,2)");
 
         builder.Property(o => o.StockIssueMessage).HasMaxLength(500);
+        builder.Property(o => o.AdminNotes).HasMaxLength(2000);
 
         builder.HasIndex(o => o.OrderNumber).IsUnique();
         builder.HasIndex(o => o.IdempotencyKey).IsUnique();

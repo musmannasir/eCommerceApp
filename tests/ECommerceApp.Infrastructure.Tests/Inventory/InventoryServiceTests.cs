@@ -113,6 +113,36 @@ public class InventoryServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task Consuming_a_reservation_deducts_on_hand_quantity_and_records_a_movement()
+    {
+        var itemId = await SeedInventoryItemAsync(quantity: 20, reorderLevel: 5);
+        var reservation = await _harness.InventoryService.ReserveStockAsync(new ReserveStockRequest(itemId, 8, "Order", "order-123"));
+
+        var consumeResult = await _harness.InventoryService.ConsumeReservationAsync(reservation.Value.Id);
+
+        consumeResult.IsSuccess.Should().BeTrue();
+        var item = await _harness.InventoryService.GetInventoryItemByIdAsync(itemId);
+        item.Value.QuantityOnHand.Should().Be(12);
+        item.Value.QuantityReserved.Should().Be(0);
+        item.Value.QuantityAvailable.Should().Be(12);
+
+        var movements = await _harness.InventoryService.GetMovementHistoryAsync(itemId, new() { PageSize = 10 });
+        movements.Value.Items.Should().Contain(m => m.MovementType == nameof(StockMovementType.SaleCompletion) && m.QuantityChange == -8);
+    }
+
+    [Fact]
+    public async Task Consuming_an_already_released_reservation_is_rejected()
+    {
+        var itemId = await SeedInventoryItemAsync(quantity: 20, reorderLevel: 5);
+        var reservation = await _harness.InventoryService.ReserveStockAsync(new ReserveStockRequest(itemId, 8, null, null));
+        await _harness.InventoryService.ReleaseReservationAsync(reservation.Value.Id);
+
+        var consumeResult = await _harness.InventoryService.ConsumeReservationAsync(reservation.Value.Id);
+
+        consumeResult.IsFailure.Should().BeTrue();
+    }
+
+    [Fact]
     public async Task Reserving_more_than_available_without_backorder_is_rejected()
     {
         var itemId = await SeedInventoryItemAsync(quantity: 5, reorderLevel: 1, allowBackorder: false);

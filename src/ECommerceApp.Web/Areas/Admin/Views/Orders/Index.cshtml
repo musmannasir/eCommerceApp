@@ -1,0 +1,71 @@
+@using ECommerceApp.Application.Common.Models
+@using ECommerceApp.Application.Orders.Models
+@model PagedResult<OrderListItemDto>
+@{
+    ViewData["Title"] = "Orders";
+    var search = ViewData["Search"] as string;
+    var status = ViewData["Status"] as string;
+    var statuses = new[] { "Pending", "Paid", "PaymentFailed", "StockReservationFailed", "Cancelled", "Shipped", "Delivered" };
+}
+
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h1 class="h3 mb-0">Orders</h1>
+</div>
+
+<form method="get" class="row g-2 mb-3">
+    <div class="col-auto">
+        <input type="search" name="search" value="@search" class="form-control" placeholder="Search order # or customer name" />
+    </div>
+    <div class="col-auto">
+        <select name="status" class="form-select">
+            <option value="">All statuses</option>
+            @foreach (var s in statuses)
+            {
+                <option value="@s" selected="@(s == status)">@s</option>
+            }
+        </select>
+    </div>
+    <div class="col-auto">
+        <button type="submit" class="btn btn-outline-primary">Filter</button>
+    </div>
+</form>
+
+<table class="table table-hover align-middle">
+    <thead>
+        <tr><th>Order #</th><th>Customer</th><th>Items</th><th>Total</th><th>Status</th><th>Placed</th><th></th></tr>
+    </thead>
+    <tbody>
+        @foreach (var order in Model.Items)
+        {
+            <tr>
+                <td>@order.OrderNumber</td>
+                <td>@order.CustomerName</td>
+                <td>@order.ItemCount</td>
+                <td>@order.GrandTotal.ToString("0.00")</td>
+                <td><span class="badge text-bg-secondary">@order.Status</span></td>
+                <td>@order.PlacedAtUtc.ToString("yyyy-MM-dd HH:mm")</td>
+                <td class="text-end">
+                    <a asp-action="Details" asp-route-id="@order.Id" class="btn btn-sm btn-outline-secondary">Open</a>
+                </td>
+            </tr>
+        }
+        @if (Model.Items.Count == 0)
+        {
+            <tr><td colspan="7" class="text-center text-muted py-4">No orders found.</td></tr>
+        }
+    </tbody>
+</table>
+
+@if (Model.TotalPages > 1)
+{
+    <nav>
+        <ul class="pagination">
+            @for (var i = 1; i <= Model.TotalPages; i++)
+            {
+                <li class="page-item @(i == Model.Page ? "active" : "")">
+                    <a class="page-link" asp-action="Index" asp-route-page="@i" asp-route-search="@search" asp-route-status="@status">@i</a>
+                </li>
+            }
+        </ul>
+    </nav>
+}

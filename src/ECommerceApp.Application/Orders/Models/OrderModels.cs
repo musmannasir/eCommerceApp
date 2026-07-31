@@ -33,6 +33,11 @@ public record OrderDto(
     string? CardBrand,
     string? DeclineReason,
     string? StockIssueMessage,
+    string? AdminNotes,
+    string? Carrier,
+    string? TrackingNumber,
+    DateTime? ShippedAtUtc,
+    DateTime? DeliveredAtUtc,
     IReadOnlyList<OrderItemDto> Items);
 
 public record OrderItemDto(
@@ -46,6 +51,26 @@ public record OrderItemDto(
     decimal UnitPrice,
     int Quantity,
     decimal LineTotal);
+
+/// <summary>The admin order queue's row shape - deliberately lighter than OrderDto, the same relationship PurchaseOrderListItemDto has to the full purchase order.</summary>
+public record OrderListItemDto(
+    int Id,
+    string OrderNumber,
+    string CustomerName,
+    string Status,
+    int ItemCount,
+    decimal GrandTotal,
+    DateTime PlacedAtUtc);
+
+public record ShipOrderRequest(string Carrier, string TrackingNumber);
+
+public record OrderQuery
+{
+    public int Page { get; init; } = 1;
+    public int PageSize { get; init; } = 20;
+    public string? Search { get; init; }
+    public string? Status { get; init; }
+}
 
 /// <summary>
 /// Everything needed to persist an order is already resolved and validated
