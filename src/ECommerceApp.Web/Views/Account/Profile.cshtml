@@ -32,6 +32,7 @@
         <div class="d-flex gap-2">
             <a class="btn btn-outline-secondary" asp-action="ChangePassword">Change password</a>
             <a class="btn btn-outline-secondary" asp-controller="Addresses" asp-action="Index">Manage addresses</a>
+            <a class="btn btn-outline-secondary" asp-controller="Orders" asp-action="Index">My orders</a>
             <form asp-action="RevokeAllSessions" method="post" onsubmit="return confirm('This will sign you out everywhere, including this device. Continue?');">
                 <button type="submit" class="btn btn-outline-danger">Revoke all sessions</button>
             </form>

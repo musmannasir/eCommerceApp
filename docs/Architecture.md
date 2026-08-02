@@ -1721,6 +1721,254 @@ reservation itself flipped to `Consumed`, and a `SaleCompletion` stock
 movement was recorded - then marked it delivered and confirmed the Details
 page correctly shows no further actions for a `Delivered` order.
 
+## Customer dashboard & order list (Milestone 11.1)
+
+**Same brief-text gap as Milestones 6.1-10.3** - scope was agreed with the
+user as a concrete, non-speculative reading of the milestone name.
+
+**`GetDashboardAsync(userId, page, pageSize)`** is deliberately its own
+`IOrderService` method rather than a thin wrapper around `GetPagedAsync` -
+the two serve genuinely different callers with different scoping rules.
+`GetPagedAsync` (Milestone 10.1) is admin-wide and takes a `Search`/`Status`
+filter; this one is hard-scoped to one `userId` (no filter - a single
+customer's own order history is small enough that search/status filtering
+would be premature), and additionally computes `TotalOrders`/`TotalSpent`
+in the same round trip, since the "dashboard" half of the milestone name
+needs them.
+
+**`TotalSpent` is computed from the `Payment` record, not `OrderStatus`.**
+`orders.Where(o => o.Payment != null && o.Payment.Status ==
+PaymentStatus.Succeeded).Sum(o => o.GrandTotal)` - this correctly includes
+`Paid`, `Shipped`, `Delivered`, and `Cancelled` orders (cancelling never
+reverses the charge - Milestone 10.2's explicit design) and excludes
+`PaymentFailed`/`StockReservationFailed`, which never resulted in a real
+charge. Deriving this from the `Payment` entity directly, rather than
+re-deriving an equivalent status list by hand, means it stays correct
+automatically if a future milestone adds another status that still implies
+a successful charge.
+
+**No per-order detail link exists yet - this is a deliberate, direct
+parallel to Milestone 10.1's own restraint.** M10.1 built the admin order
+queue with no link into a single order, leaving that entirely to M10.2.
+This milestone does the same on the customer side: linking each row to the
+existing `/Checkout/Confirmation/{orderNumber}` page was considered and
+rejected, because that page's own copy ("nothing has shipped yet") is
+already stale for any order that has genuinely shipped or been delivered
+since Milestone 10.3 - wiring up a link to a page with known-wrong copy
+would be introducing awareness of a bug without fixing it. Building (or
+fixing) the real customer order-detail page, with tracking and an invoice,
+is explicitly Milestone 11.2's job.
+
+**Routing and placement mirror `AddressesController` exactly** - a
+top-level (non-Admin-area) `[Authorize]` controller at `/Orders`, account-
+only with no guest concept (order history only exists once you've signed
+in), linked from the Profile page's button row ("My orders") next to
+"Manage addresses" - the same placement Milestone 8.1 established for
+infrequent, non-badge-worthy account actions.
+
+**Manually verified** against the real dev database: a customer with one
+`Delivered` order (from Milestone 10.3's own manual verification) sees
+"1" total order and "27.00" total spent on their dashboard, the order row
+renders with the correct date/items/total/status, the Profile page's "My
+orders" link works, and an anonymous visitor hitting `/Orders` is
+redirected to login.
+
+## Order detail, tracking, invoice (Milestone 11.2)
+
+**Same brief-text gap as Milestones 6.1-11.1** - scope was agreed with the
+user as a concrete, non-speculative reading of the milestone name, which
+names three distinct pieces: a real detail page, tracking, and an invoice.
+
+**No Application-layer changes were needed at all.** `OrdersController`'s
+new `Details`/`Invoice` actions both call the same `IOrderService
+.GetByOrderNumberAsync` that has existed, ownership-scoped, since Milestone
+9.1 - Milestone 10.3 already extended `OrderDto` with
+`Carrier`/`TrackingNumber`/`ShippedAtUtc`/`DeliveredAtUtc` when it built
+`Shipment`, so this milestone's job was purely to render data that already
+existed, for the first time, to the customer who owns it.
+
+**Tracking is a status timeline, not a carrier integration.** The Details
+view computes a small list of `(Label, Done, Failed)` steps from
+`Model.Status` - `Placed -> Paid -> Shipped -> Delivered` for the normal
+path, with `PaymentFailed`/`StockReservationFailed`/`Cancelled` each
+rendered as their own short, terminal branch (mirroring Confirmation's
+existing three-way split from Milestone 9.3, extended to cover the two new
+Milestone 10.3 statuses). There is no real carrier API anywhere in this
+app - the same "simulated, not integrated" posture `SimulatedPaymentGateway`
+established in Milestone 9.2 - so "tracking" here means displaying the
+`Shipment` record's own fields, not calling out to a shipping provider.
+
+**Invoice eligibility is checked against `PaymentStatus`, not `Status`.**
+`OrdersController.Invoice` redirects back to Details with a
+`TempData["Error"]` unless `result.Value.PaymentStatus ==
+nameof(PaymentStatus.Succeeded)`. This was deliberately not implemented as
+an order-status allow-list (`Paid`/`Shipped`/`Delivered`/`Cancelled`) - a
+`Cancelled` order was genuinely charged and Milestone 10.2 never refunds
+it, so it still needs an invoice; checking the actual payment outcome
+gets this right automatically rather than needing updating every time a
+new status is added that happens to imply a successful charge (the exact
+same reasoning Milestone 11.1's `TotalSpent` calculation already uses).
+
+**The invoice is a plain HTML page with print CSS, not a generated PDF.**
+No PDF-generation library exists anywhere in this solution, and introducing
+one for a single print-friendly page would be a disproportionate new
+dependency; a `@@media print { header, footer, .no-print { display: none;
+} }` block hides the site chrome and a `window.print()` button lets the
+customer print or "Print to PDF" via their own browser - the standard,
+dependency-free way to produce a printable document from a web page.
+
+**A real, self-inflicted bug fixed along the way.** Milestone 11.1's own
+scope note flagged that Confirmation's banner text - "nothing has shipped
+yet" - goes stale the moment a real shipment exists (Milestone 10.3),
+since Confirmation is reachable again later (a bookmark, a resubmitted
+idempotency key), not only immediately after checkout. Rather than
+duplicating shipment rendering onto Confirmation to keep it accurate
+forever, the stale claim was simply removed and a "View order details"
+link was added pointing at the new Details page - the definitive, always-
+current source for an order's real-time status.
+
+**Manually verified** against the real dev database: opened a `Delivered`
+order's detail page (correct four-step timeline, tracking card showing
+carrier/number/dates, invoice link present), printed its invoice (correct
+line items/totals/payment method, site chrome absent), confirmed a
+declined order shows no invoice link and a direct hit on its Invoice URL
+redirects back to Details with the expected message, and confirmed a
+second customer gets a `404` attempting either the Details or Invoice URL
+for an order that isn't theirs.
+
+## Reorder (Milestone 11.3)
+
+**Same brief-text gap as Milestones 6.1-11.2** - scope was agreed with the
+user as a concrete reading of the milestone name. This closes out
+Milestone 11 in its entirety (11.1 Dashboard & order list, 11.2 Order
+detail/tracking/invoice, 11.3 Reorder).
+
+**Not gated by `OrderStatusTransitions` or order status at all.** Cancel/
+Ship/MarkDelivered (Milestone 10.3) all route through the centralized
+state machine because they mutate the order's own lifecycle. Reorder does
+not - it only reads a past order's line items and writes to the cart, so
+there is no order-lifecycle invariant to protect. It is deliberately
+offered on every order regardless of status, since it is arguably most
+useful on a `PaymentFailed`/`StockReservationFailed` order where the
+customer wants to try again with the same items.
+
+**`ICartService.ReorderAsync` reuses `AddItemAsync` per line rather than
+introducing new cart-mutation logic.** It loops the order's items, calling
+the existing, already-fully-validated `AddItemAsync` (Milestone 6.1) once
+per line; a per-line failure (deactivated product, invalid/inactive
+variant, insufficient stock) is caught and recorded as a
+`ReorderSkippedItemDto(ProductName, Reason)` instead of aborting the whole
+batch, so a single stale line never blocks the rest of a - possibly
+multi-item - order from being re-added. After the loop, the cart is read
+once via `GetCartAsync` to return the final, fully-rebuilt state. This
+mirrors `MergeGuestCartIntoUserCartAsync`'s (Milestone 6.2) precedent of
+capping/skipping individual lines rather than failing an entire batch
+operation over one bad line.
+
+**The customer `OrdersController` gained `ICartService` as a dependency**
+for the new `POST /Orders/{orderNumber}/Reorder` action - the first time
+that controller has needed to write to the cart rather than just read
+orders. `CartOwner.ForUser(UserId)` is constructed directly rather than
+via `ICartOwnerAccessor` (the pattern `CartController` uses for its
+guest-capable actions) - `[Authorize]` already guarantees a real signed-in
+user here, so there is no guest-cart case to resolve.
+
+**Redirects to `/Cart` and relies on the page's existing `TempData`
+rendering** - `Views/Cart/Index.cshtml` has rendered
+`TempData["Message"]`/`["Error"]` since Milestone 8.3's own cart bug-fix,
+so no new view-level plumbing was needed to surface the outcome: an
+all-succeeded reorder sets `Message`, an all-skipped reorder sets `Error`,
+and a partial result sets both simultaneously (both banners render
+independently, so the customer sees both what was added and what wasn't,
+with why).
+
+**Manually verified** against the real dev database: placed an order,
+opened its Details page, clicked "Reorder these items", confirmed the
+redirect to `/Cart` and the "Added 1 item to your cart" banner with the
+correct line item and price. The deactivated-product skip path and the
+cross-customer ownership block (`404`, same as Details/Invoice) are
+covered by integration tests rather than repeated manually, since they
+are just `AddItemAsync`'s pre-existing, already-verified validation paths
+exercised through the new endpoint.
+
+## Review submission & rating summary (Milestone 12.1)
+
+**Same brief-text gap as Milestones 6.1-11.3** - scope was agreed with the
+user as a concrete reading of the milestone name. Confirmed via research
+before starting that this was a genuine clean-slate build: no `Review`/
+`Rating` entity existed anywhere in the Domain layer, `ProductDetailDto`
+had no rating fields, and the product page's "Reviews" tab was a static
+"coming in a later milestone" paragraph.
+
+**`Review` is `AuditableEntity`, not `BaseEntity`-only** - unlike a
+`WishlistItem` bookmark (a toggle, hard-deleted on removal) a review is
+substantive content that Milestone 12.2's moderation will need to
+soft-delete without losing the audit trail, the same "recoverable,
+auditable" reasoning every catalog/inventory/order entity already uses.
+One review per `(UserId, ProductId)`, enforced via a unique index -
+directly mirroring `WishlistItem`'s own uniqueness constraint.
+
+**Any authenticated customer may review any product regardless of
+purchase history - `IsVerifiedPurchase` is a badge, not a gate.**
+Computed once at submission time by checking whether the reviewer has an
+order containing this product whose status reflects a genuine charge
+(`Paid`/`Shipped`/`Delivered`/`Cancelled` - the exact same "genuinely
+charged" status set Milestone 11.1's `TotalSpent` and Milestone 11.2's
+invoice eligibility already established, since a `Cancelled` order was
+never refunded per Milestone 10.2). A snapshot, not a live-recomputed
+flag - the same reasoning `OrderItem`'s own snapshotted fields use.
+
+**Reviewer identity is "First name + last initial"** (e.g. "Jane D."),
+not the account's full name - a privacy-conscious default judgment call,
+since no other feature in this app has needed to display one customer's
+identity to another and there's no prior precedent either way.
+
+**No edit/delete, no moderation gate.** A review is visible immediately
+on submission - "submission" is additive by name, and Milestone 12.2
+("Moderation & abuse protection") is explicitly the very next
+sub-milestone, so building a moderation queue now would be speculative
+work for a feature that doesn't exist yet.
+
+**The rating summary is computed live from the Reviews table on every
+read**, not denormalized onto `Product` - matches this app's consistent
+"compute at read time" posture for stock aggregation (Milestone 3.1) and
+tax/shipping estimates (Milestones 7.2/7.3), and avoids a cache-
+invalidation problem for a feature with no measured scale need yet. The
+star breakdown (`RatingBreakdown`) always has all five keys (1-5)
+present, zero-filled, so the view's bar chart never has to guard against
+a missing star level.
+
+**`ProductDetailService` now also depends on `IReviewService`** - the
+exact precedent `IWishlistService` set in Milestone 6.3 for a Storefront
+service enriching `ProductDetailDto` with a cross-domain, page-level
+concern (`IsWishlisted` then; `RatingSummary`/`Reviews`/`HasReviewed`
+now). `GetDetailAsync` gained a `reviewsPage` parameter so the Reviews
+tab's list paginates independently of the rest of the page (variant
+selection, related products, etc.) via its own `?reviewsPage=N` query
+string param.
+
+**The submission form is a classic MVC form POST, not AJAX** - unlike
+Wishlist's toggle button, a review is substantive content worth a full
+page reload and a `TempData`-surfaced outcome (`ReviewMessage`/
+`ReviewError`), the same pattern Reorder (Milestone 11.3) established
+for the same reason. Validation is Data Annotations on a
+`ReviewFormViewModel` checked via `ModelState.IsValid`, matching
+`AddressesController`'s own classic-form validation convention (not
+FluentValidation - the existing `Application/Addresses/Validators`
+FluentValidation validators are themselves unused by any classic-form
+controller in this codebase, so introducing a matching unused one here
+would just repeat that inconsistency rather than following a real
+working pattern).
+
+**Manually verified** against the real dev database: an anonymous
+visitor sees "Log in to write a review" instead of the form; a signed-in
+customer submits a review and it appears immediately with the updated
+average rating and star-count breakdown; the same customer - having
+genuinely purchased this exact product in an earlier milestone's manual
+verification - sees the "Verified Purchase" badge on their own review;
+and revisiting the tab shows "You've already reviewed this product" with
+the form replaced accordingly.
+
 ## Framework version note
 
 The brief fixes the stack at **.NET 8**. This machine has only the **.NET 10**

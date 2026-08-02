@@ -1,6 +1,7 @@
 using ECommerceApp.Application.Addresses.Models;
 using ECommerceApp.Application.Carts.Models;
 using ECommerceApp.Application.Checkout.Models;
+using ECommerceApp.Application.Common.Models;
 using ECommerceApp.Application.Payments.Models;
 using ECommerceApp.Application.Shipping.Models;
 
@@ -63,6 +64,15 @@ public record OrderListItemDto(
     DateTime PlacedAtUtc);
 
 public record ShipOrderRequest(string Carrier, string TrackingNumber);
+
+/// <summary>
+/// The customer-facing "My Orders" dashboard (Milestone 11.1) - TotalSpent
+/// only counts orders whose payment actually succeeded (Payment.Status ==
+/// Succeeded), which covers Paid/Shipped/Delivered/Cancelled (cancelling
+/// does not reverse the charge - Milestone 10.2) and excludes
+/// PaymentFailed/StockReservationFailed, which were never actually charged.
+/// </summary>
+public record CustomerOrderDashboardDto(int TotalOrders, decimal TotalSpent, PagedResult<OrderListItemDto> Orders);
 
 public record OrderQuery
 {

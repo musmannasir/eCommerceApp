@@ -1,4 +1,6 @@
 using System.Text.Json.Serialization;
+using ECommerceApp.Application.Common.Models;
+using ECommerceApp.Application.Reviews.Models;
 
 namespace ECommerceApp.Application.Storefront.Models;
 
@@ -80,4 +82,7 @@ public record ProductDetailDto(
     int AvailableQuantity,
     IReadOnlyList<HomeProductCardDto> RelatedProducts,
     IReadOnlyList<HomeProductCardDto> RecentlyViewed,
-    bool IsWishlisted);
+    bool IsWishlisted,
+    ProductRatingSummaryDto RatingSummary,
+    PagedResult<ReviewDto> Reviews,
+    bool HasReviewed);

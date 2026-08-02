@@ -47,4 +47,7 @@ public interface IOrderService
     Task<Result<OrderDto>> GetByIdempotencyKeyAsync(string userId, string idempotencyKey, CancellationToken cancellationToken = default);
 
     Task<Result<OrderDto>> GetByOrderNumberAsync(string userId, string orderNumber, CancellationToken cancellationToken = default);
+
+    /// <summary>Customer-facing order dashboard (Milestone 11.1) - ownership-scoped, unlike GetPagedAsync's admin-wide queue.</summary>
+    Task<Result<CustomerOrderDashboardDto>> GetDashboardAsync(string userId, int page, int pageSize, CancellationToken cancellationToken = default);
 }

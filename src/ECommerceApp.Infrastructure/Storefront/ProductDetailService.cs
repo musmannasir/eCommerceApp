@@ -1,4 +1,5 @@
 using ECommerceApp.Application.Pricing;
+using ECommerceApp.Application.Reviews;
 using ECommerceApp.Application.Storefront;
 using ECommerceApp.Application.Storefront.Models;
 using ECommerceApp.Application.Wishlist;
@@ -20,29 +21,34 @@ namespace ECommerceApp.Infrastructure.Storefront;
 public sealed class ProductDetailService : IProductDetailService
 {
     private const int RelatedProductCount = 8;
+    private const int ReviewsPageSize = 10;
 
     private readonly ApplicationDbContext _dbContext;
     private readonly IPricingService _pricingService;
     private readonly IRecommendationService _recommendationService;
     private readonly IRecentlyViewedService _recentlyViewedService;
     private readonly IWishlistService _wishlistService;
+    private readonly IReviewService _reviewService;
 
     public ProductDetailService(
         ApplicationDbContext dbContext,
         IPricingService pricingService,
         IRecommendationService recommendationService,
         IRecentlyViewedService recentlyViewedService,
-        IWishlistService wishlistService)
+        IWishlistService wishlistService,
+        IReviewService reviewService)
     {
         _dbContext = dbContext;
         _pricingService = pricingService;
         _recommendationService = recommendationService;
         _recentlyViewedService = recentlyViewedService;
         _wishlistService = wishlistService;
+        _reviewService = reviewService;
     }
 
     public async Task<Result<ProductDetailDto>> GetDetailAsync(
-        string slug, int? selectedVariantId, IReadOnlyList<int> selectedAttributeValueIds, string? userId = null, CancellationToken cancellationToken = default)
+        string slug, int? selectedVariantId, IReadOnlyList<int> selectedAttributeValueIds, string? userId = null,
+        int reviewsPage = 1, CancellationToken cancellationToken = default)
     {
         var product = await _dbContext.Products
             .Where(p => p.Slug == slug && p.IsActive && p.IsPublished)
@@ -99,6 +105,9 @@ public sealed class ProductDetailService : IProductDetailService
         var relatedProducts = await _recommendationService.GetRecommendationsAsync(product.Id, RelatedProductCount, cancellationToken);
         var recentlyViewed = await _recentlyViewedService.GetRecentlyViewedAsync(product.Id, cancellationToken);
         var isWishlisted = userId is not null && await _wishlistService.IsWishlistedAsync(userId, product.Id, cancellationToken);
+        var ratingSummary = await _reviewService.GetRatingSummaryAsync(product.Id, cancellationToken);
+        var reviews = await _reviewService.GetReviewsAsync(product.Id, reviewsPage, ReviewsPageSize, cancellationToken);
+        var hasReviewed = userId is not null && await _reviewService.HasReviewedAsync(userId, product.Id, cancellationToken);
         var variantCombinations = activeVariants
             .Select(v => new VariantCombinationDto(v.Id, v.AttributeValues.Select(av => av.ProductAttributeValueId).ToList()))
             .ToList();
@@ -135,7 +144,10 @@ public sealed class ProductDetailService : IProductDetailService
             availableQuantity,
             relatedProducts,
             recentlyViewed,
-            isWishlisted);
+            isWishlisted,
+            ratingSummary,
+            reviews,
+            hasReviewed);
 
         return Result.Success(dto);
     }

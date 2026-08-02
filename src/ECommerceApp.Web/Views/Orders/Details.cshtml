@@ -1,0 +1,183 @@
+@using ECommerceApp.Application.Orders.Models
+@using ECommerceApp.Domain.Orders
+@model OrderDto
+@{
+    ViewData["Title"] = $"Order {Model.OrderNumber}";
+    var stockFailed = Model.Status == nameof(OrderStatus.StockReservationFailed);
+    var paymentFailed = Model.Status == nameof(OrderStatus.PaymentFailed);
+    var cancelled = Model.Status == nameof(OrderStatus.Cancelled);
+    var chargedSuccessfully = Model.PaymentStatus == nameof(ECommerceApp.Domain.Payments.PaymentStatus.Succeeded);
+
+    var steps = new List<(string Label, bool Done, bool Failed)>();
+    if (paymentFailed)
+    {
+        steps.Add(("Placed", true, false));
+        steps.Add(("Payment failed", true, true));
+    }
+    else if (stockFailed)
+    {
+        steps.Add(("Placed", true, false));
+        steps.Add(("Stock issue", true, true));
+    }
+    else if (cancelled)
+    {
+        steps.Add(("Placed", true, false));
+        steps.Add(("Paid", true, false));
+        steps.Add(("Cancelled", true, true));
+    }
+    else
+    {
+        steps.Add(("Placed", true, false));
+        steps.Add(("Paid", true, false));
+        steps.Add(("Shipped", Model.ShippedAtUtc is not null, false));
+        steps.Add(("Delivered", Model.DeliveredAtUtc is not null, false));
+    }
+}
+
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h1 class="h3 mb-0">@Model.OrderNumber</h1>
+    <a asp-action="Index" class="btn btn-outline-secondary">Back to my orders</a>
+</div>
+
+@if (TempData["Error"] is string error)
+{
+    <div class="alert alert-danger">@error</div>
+}
+
+<div class="d-flex gap-2 mb-4 flex-wrap">
+    @foreach (var step in steps)
+    {
+        var cls = step.Failed ? "text-bg-danger" : step.Done ? "text-bg-success" : "text-bg-secondary";
+        <span class="badge @cls">@step.Label</span>
+    }
+</div>
+
+@if (!string.IsNullOrEmpty(Model.StockIssueMessage))
+{
+    <div class="alert alert-warning">@Model.StockIssueMessage</div>
+}
+@if (paymentFailed && !string.IsNullOrEmpty(Model.DeclineReason))
+{
+    <div class="alert alert-danger">@Model.DeclineReason</div>
+}
+
+<div class="row">
+    <div class="col-lg-8">
+        <div class="card mb-3">
+            <div class="card-body">
+                <div class="text-muted small">Shipping to</div>
+                <strong>@(string.IsNullOrEmpty(Model.ShippingLabel) ? Model.ShippingFullName : Model.ShippingLabel)</strong>
+                <div class="small">@Model.ShippingFullName &middot; @Model.ShippingPhone</div>
+                <div class="small">
+                    @Model.ShippingLine1, @Model.ShippingCity@(!string.IsNullOrEmpty(Model.ShippingRegionCode) ? $", {Model.ShippingRegionCode}" : "") @Model.ShippingPostalCode, @Model.ShippingCountryCode
+                </div>
+            </div>
+        </div>
+
+        <div class="card mb-3">
+            <div class="card-body">
+                <div class="text-muted small">Shipping method</div>
+                <strong>@Model.ShippingMethodName</strong> - @(Model.ShippingCost == 0 ? "Free" : Model.ShippingCost.ToString("0.00"))
+            </div>
+        </div>
+
+        @if (!string.IsNullOrEmpty(Model.Carrier))
+        {
+            <div class="card mb-3">
+                <div class="card-body">
+                    <div class="text-muted small">Tracking</div>
+                    <strong>@Model.Carrier</strong> - @Model.TrackingNumber
+                    <div class="small text-muted">Shipped @Model.ShippedAtUtc?.ToString("f") UTC</div>
+                    @if (Model.DeliveredAtUtc is not null)
+                    {
+                        <div class="small text-success">Delivered @Model.DeliveredAtUtc?.ToString("f") UTC</div>
+                    }
+                </div>
+            </div>
+        }
+
+        @if (!stockFailed)
+        {
+            <div class="card mb-3">
+                <div class="card-body">
+                    <div class="text-muted small">Payment</div>
+                    <strong>@(chargedSuccessfully ? "Paid" : "Declined")</strong>
+                    @if (!string.IsNullOrEmpty(Model.CardBrand))
+                    {
+                        <span>- @Model.CardBrand @Model.MaskedCardNumber</span>
+                    }
+                </div>
+            </div>
+        }
+
+        <div class="card">
+            <div class="card-body">
+                <h2 class="h6">Items</h2>
+                <table class="table table-sm align-middle mb-0">
+                    <tbody>
+                        @foreach (var item in Model.Items)
+                        {
+                            <tr>
+                                <td>
+                                    @item.ProductName
+                                    @if (!string.IsNullOrEmpty(item.VariantDescription))
+                                    {
+                                        <div class="text-muted small">@item.VariantDescription</div>
+                                    }
+                                </td>
+                                <td class="text-center">&times;@item.Quantity</td>
+                                <td class="text-end">@item.LineTotal.ToString("0.00")</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-4">
+        <div class="card mb-3">
+            <div class="card-body">
+                <h2 class="h6">Order total</h2>
+                <div class="d-flex justify-content-between">
+                    <span>Subtotal</span>
+                    <span>@Model.Subtotal.ToString("0.00")</span>
+                </div>
+                @if (Model.PromotionDiscountAmount > 0)
+                {
+                    <div class="d-flex justify-content-between text-success">
+                        <span>
+                            Discount
+                            @if (!string.IsNullOrEmpty(Model.AppliedCouponCode))
+                            {
+                                <span class="text-muted small">(@Model.AppliedCouponCode)</span>
+                            }
+                        </span>
+                        <span>-@Model.PromotionDiscountAmount.ToString("0.00")</span>
+                    </div>
+                }
+                <div class="d-flex justify-content-between">
+                    <span>Tax</span>
+                    <span>@Model.Tax.ToString("0.00")</span>
+                </div>
+                <div class="d-flex justify-content-between">
+                    <span>Shipping</span>
+                    <span>@(Model.ShippingCost == 0 ? "Free" : Model.ShippingCost.ToString("0.00"))</span>
+                </div>
+                <hr />
+                <div class="d-flex justify-content-between fs-5">
+                    <strong>Total</strong>
+                    <strong>@Model.GrandTotal.ToString("0.00")</strong>
+                </div>
+                <div class="text-muted small mt-2">Placed @Model.PlacedAtUtc.ToString("f") UTC</div>
+            </div>
+        </div>
+
+        @if (chargedSuccessfully)
+        {
+            <a asp-action="Invoice" asp-route-orderNumber="@Model.OrderNumber" class="btn btn-outline-secondary w-100 mb-2">Print invoice</a>
+        }
+        <form asp-action="Reorder" asp-route-orderNumber="@Model.OrderNumber" method="post">
+            <button type="submit" class="btn btn-outline-primary w-100">Reorder these items</button>
+        </form>
+    </div>
+</div>

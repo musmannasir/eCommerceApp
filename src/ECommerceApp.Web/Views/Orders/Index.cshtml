@@ -1,0 +1,68 @@
+@using ECommerceApp.Application.Orders.Models
+@model CustomerOrderDashboardDto
+@{
+    ViewData["Title"] = "Your orders";
+}
+
+<h1 class="h3 mb-4">Your orders</h1>
+
+<div class="row mb-4">
+    <div class="col-sm-6 col-md-4">
+        <div class="card">
+            <div class="card-body">
+                <div class="text-muted small">Total orders</div>
+                <div class="fs-4">@Model.TotalOrders</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-sm-6 col-md-4">
+        <div class="card">
+            <div class="card-body">
+                <div class="text-muted small">Total spent</div>
+                <div class="fs-4">@Model.TotalSpent.ToString("0.00")</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+@if (Model.Orders.Items.Count == 0)
+{
+    <p class="text-muted">You haven't placed any orders yet.</p>
+}
+else
+{
+    <table class="table table-hover align-middle">
+        <thead>
+            <tr><th>Order #</th><th>Placed</th><th>Items</th><th>Total</th><th>Status</th><th></th></tr>
+        </thead>
+        <tbody>
+            @foreach (var order in Model.Orders.Items)
+            {
+                <tr>
+                    <td>@order.OrderNumber</td>
+                    <td>@order.PlacedAtUtc.ToString("yyyy-MM-dd")</td>
+                    <td>@order.ItemCount</td>
+                    <td>@order.GrandTotal.ToString("0.00")</td>
+                    <td><span class="badge text-bg-secondary">@order.Status</span></td>
+                    <td class="text-end">
+                        <a asp-action="Details" asp-route-orderNumber="@order.OrderNumber" class="btn btn-sm btn-outline-secondary">View</a>
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+
+    @if (Model.Orders.TotalPages > 1)
+    {
+        <nav>
+            <ul class="pagination">
+                @for (var i = 1; i <= Model.Orders.TotalPages; i++)
+                {
+                    <li class="page-item @(i == Model.Orders.Page ? "active" : "")">
+                        <a class="page-link" asp-action="Index" asp-route-page="@i">@i</a>
+                    </li>
+                }
+            </ul>
+        </nav>
+    }
+}

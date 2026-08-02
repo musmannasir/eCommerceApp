@@ -227,6 +227,29 @@ public sealed class OrderService : IOrderService
         return Result.Success(new PagedResult<OrderListItemDto>(items, totalCount, query.Page, query.PageSize));
     }
 
+    public async Task<Result<CustomerOrderDashboardDto>> GetDashboardAsync(string userId, int page, int pageSize, CancellationToken cancellationToken = default)
+    {
+        var orders = _dbContext.Orders.Include(o => o.Items).Where(o => o.UserId == userId);
+
+        var totalOrders = await orders.CountAsync(cancellationToken);
+        var totalSpent = await orders
+            .Where(o => o.Payment != null && o.Payment.Status == PaymentStatus.Succeeded)
+            .SumAsync(o => o.GrandTotal, cancellationToken);
+
+        var pageItems = await orders
+            .OrderByDescending(o => o.Id)
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .AsNoTracking()
+            .ToListAsync(cancellationToken);
+
+        var items = pageItems.Select(o => new OrderListItemDto(
+            o.Id, o.OrderNumber, o.ShippingFullName, o.Status.ToString(), o.Items.Count, o.GrandTotal, o.CreatedAtUtc)).ToList();
+
+        return Result.Success(new CustomerOrderDashboardDto(
+            totalOrders, totalSpent, new PagedResult<OrderListItemDto>(items, totalOrders, page, pageSize)));
+    }
+
     public async Task<Result<OrderDto>> GetByIdempotencyKeyAsync(string userId, string idempotencyKey, CancellationToken cancellationToken = default)
     {
         var order = await FindByIdempotencyKeyAsync(userId, idempotencyKey, cancellationToken);

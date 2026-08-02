@@ -269,6 +269,51 @@ public class OrderServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task GetDashboardAsync_only_includes_the_given_users_orders()
+    {
+        await _harness.OrderService.CreateOrderAsync(StandardRequest("user-1", Guid.NewGuid().ToString("N")));
+        await _harness.OrderService.CreateOrderAsync(StandardRequest("user-2", Guid.NewGuid().ToString("N")));
+
+        var result = await _harness.OrderService.GetDashboardAsync("user-1", page: 1, pageSize: 10);
+
+        result.Value.TotalOrders.Should().Be(1);
+        result.Value.Orders.Items.Should().ContainSingle();
+    }
+
+    [Fact]
+    public async Task GetDashboardAsync_only_counts_total_spent_from_successfully_charged_orders()
+    {
+        var paid = await _harness.OrderService.CreateOrderAsync(StandardRequest("user-1", Guid.NewGuid().ToString("N")));
+        paid.Value.Status.Should().Be(nameof(OrderStatus.Paid));
+        var failed = await _harness.OrderService.CreateOrderAsync(StandardRequest("user-1", Guid.NewGuid().ToString("N")) with
+        {
+            Payment = StandardPayment() with { CardNumber = "4000000000000002" },
+        });
+        failed.Value.Status.Should().Be(nameof(OrderStatus.PaymentFailed));
+
+        var result = await _harness.OrderService.GetDashboardAsync("user-1", page: 1, pageSize: 10);
+
+        result.Value.TotalOrders.Should().Be(2);
+        result.Value.TotalSpent.Should().Be(paid.Value.GrandTotal);
+    }
+
+    [Fact]
+    public async Task GetDashboardAsync_paginates_correctly()
+    {
+        for (var i = 0; i < 3; i++)
+        {
+            await _harness.OrderService.CreateOrderAsync(StandardRequest("user-1", Guid.NewGuid().ToString("N")));
+        }
+
+        var firstPage = await _harness.OrderService.GetDashboardAsync("user-1", page: 1, pageSize: 2);
+        var secondPage = await _harness.OrderService.GetDashboardAsync("user-1", page: 2, pageSize: 2);
+
+        firstPage.Value.Orders.Items.Should().HaveCount(2);
+        firstPage.Value.TotalOrders.Should().Be(3);
+        secondPage.Value.Orders.Items.Should().HaveCount(1);
+    }
+
+    [Fact]
     public async Task GetByIdAsync_returns_an_order_regardless_of_which_user_placed_it()
     {
         var created = await _harness.OrderService.CreateOrderAsync(StandardRequest("user-1", Guid.NewGuid().ToString("N")));

@@ -741,6 +741,65 @@ public class CartServiceTests : IDisposable
         return result.Value;
     }
 
+    [Fact]
+    public async Task Reorder_adds_every_line_when_all_items_are_still_available()
+    {
+        var productA = await SeedProductAsync(name: "Widget A");
+        var productB = await SeedProductAsync(name: "Widget B");
+        var owner = GuestOwner();
+        var items = new[]
+        {
+            new ReorderItemRequest(productA.Id, null, 2, productA.Name),
+            new ReorderItemRequest(productB.Id, null, 1, productB.Name),
+        };
+
+        var result = await _harness.CartService.ReorderAsync(owner, items);
+
+        result.AddedCount.Should().Be(2);
+        result.SkippedItems.Should().BeEmpty();
+        result.Cart.Items.Should().HaveCount(2);
+        result.Cart.Items.Should().Contain(i => i.ProductId == productA.Id && i.Quantity == 2);
+        result.Cart.Items.Should().Contain(i => i.ProductId == productB.Id && i.Quantity == 1);
+    }
+
+    [Fact]
+    public async Task Reorder_skips_a_deactivated_product_but_still_adds_the_remaining_items()
+    {
+        var available = await SeedProductAsync(name: "Still Available");
+        var discontinued = await SeedProductAsync(name: "Discontinued", isActive: false);
+        var owner = GuestOwner();
+        var items = new[]
+        {
+            new ReorderItemRequest(available.Id, null, 1, available.Name),
+            new ReorderItemRequest(discontinued.Id, null, 1, discontinued.Name),
+        };
+
+        var result = await _harness.CartService.ReorderAsync(owner, items);
+
+        result.AddedCount.Should().Be(1);
+        result.SkippedItems.Should().ContainSingle(s => s.ProductName == "Discontinued");
+        result.Cart.Items.Should().ContainSingle(i => i.ProductId == available.Id);
+    }
+
+    [Fact]
+    public async Task Reorder_returns_zero_added_and_all_skipped_when_every_item_is_unavailable()
+    {
+        var productA = await SeedProductAsync(name: "Gone A", isActive: false);
+        var productB = await SeedProductAsync(name: "Gone B", isPublished: false);
+        var owner = GuestOwner();
+        var items = new[]
+        {
+            new ReorderItemRequest(productA.Id, null, 1, productA.Name),
+            new ReorderItemRequest(productB.Id, null, 1, productB.Name),
+        };
+
+        var result = await _harness.CartService.ReorderAsync(owner, items);
+
+        result.AddedCount.Should().Be(0);
+        result.SkippedItems.Should().HaveCount(2);
+        result.Cart.Items.Should().BeEmpty();
+    }
+
     private static CartOwner GuestOwner() => CartOwner.ForGuest(Guid.NewGuid().ToString("N"));
 
     private async Task<Category> SeedCategoryAsync()

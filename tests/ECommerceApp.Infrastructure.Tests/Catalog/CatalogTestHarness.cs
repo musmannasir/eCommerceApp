@@ -7,6 +7,7 @@ using ECommerceApp.Infrastructure.Marketing;
 using ECommerceApp.Infrastructure.Orders;
 using ECommerceApp.Infrastructure.Payments;
 using ECommerceApp.Infrastructure.Pricing;
+using ECommerceApp.Infrastructure.Reviews;
 using ECommerceApp.Infrastructure.Shipping;
 using ECommerceApp.Infrastructure.Storefront;
 using ECommerceApp.Infrastructure.Taxation;
@@ -36,6 +37,7 @@ public sealed class CatalogTestHarness : IDisposable
     public ProductDetailService ProductDetailService { get; }
     public CartService CartService { get; }
     public WishlistService WishlistService { get; }
+    public ReviewService ReviewService { get; }
     public PromotionService PromotionService { get; }
     public TaxService TaxService { get; }
     public ShippingService ShippingService { get; }
@@ -76,7 +78,8 @@ public sealed class CatalogTestHarness : IDisposable
         PricingService = new PricingService(new ConfigurationBuilder().Build());
         RecommendationService = new RecommendationService(DbContext);
         WishlistService = new WishlistService(DbContext, Clock);
-        ProductDetailService = new ProductDetailService(DbContext, PricingService, RecommendationService, RecentlyViewedService, WishlistService);
+        ReviewService = new ReviewService(DbContext);
+        ProductDetailService = new ProductDetailService(DbContext, PricingService, RecommendationService, RecentlyViewedService, WishlistService, ReviewService);
         PromotionService = new PromotionService(DbContext);
         TaxService = new TaxService(DbContext, configuration);
         ShippingService = new ShippingService(DbContext, configuration);
