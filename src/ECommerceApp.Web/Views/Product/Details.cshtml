@@ -252,6 +252,29 @@
                         <div class="fw-semibold mt-1">@review.Title</div>
                     }
                     <p class="mb-0">@review.Body</p>
+                    @if (User.Identity?.IsAuthenticated == true)
+                    {
+                        <button type="button" class="btn btn-link btn-sm p-0 text-muted" data-bs-toggle="collapse" data-bs-target="#reportCollapse-@review.Id">Report</button>
+                        <div class="collapse mt-2" id="reportCollapse-@review.Id">
+                            <form method="post" asp-action="ReportReview" asp-route-slug="@Model.Slug" asp-route-reviewId="@review.Id" class="border rounded p-2">
+                                <input type="hidden" name="ReviewId" value="@review.Id" />
+                                <div class="mb-2">
+                                    <label class="form-label small fw-semibold" for="reportReason-@review.Id">Reason</label>
+                                    <select class="form-select form-select-sm" id="reportReason-@review.Id" name="Reason" required>
+                                        <option value="Spam">Spam</option>
+                                        <option value="Offensive">Offensive</option>
+                                        <option value="Irrelevant">Irrelevant</option>
+                                        <option value="Other">Other</option>
+                                    </select>
+                                </div>
+                                <div class="mb-2">
+                                    <label class="form-label small fw-semibold" for="reportComment-@review.Id">Additional details (optional)</label>
+                                    <textarea class="form-control form-control-sm" id="reportComment-@review.Id" name="Comment" rows="2" maxlength="500"></textarea>
+                                </div>
+                                <button type="submit" class="btn btn-sm btn-outline-secondary">Submit report</button>
+                            </form>
+                        </div>
+                    }
                 </div>
             }
 

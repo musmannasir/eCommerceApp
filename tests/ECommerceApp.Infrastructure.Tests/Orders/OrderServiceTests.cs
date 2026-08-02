@@ -7,6 +7,7 @@ using ECommerceApp.Application.Payments.Models;
 using ECommerceApp.Application.Shipping.Models;
 using ECommerceApp.Application.Storefront.Models;
 using ECommerceApp.Domain.Catalog;
+using ECommerceApp.Domain.Common;
 using ECommerceApp.Domain.Inventory;
 using ECommerceApp.Domain.Orders;
 using ECommerceApp.Domain.Payments;
@@ -360,6 +361,49 @@ public class OrderServiceTests : IDisposable
         var result = await _harness.OrderService.CancelAsync(created.Value.Id);
 
         result.IsFailure.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task CancelOwnOrderAsync_releases_the_reservation_and_marks_a_paid_order_cancelled()
+    {
+        var (productId, itemId) = await SeedInventoryItemAsync(quantity: 20, reorderLevel: 2);
+        var created = await _harness.OrderService.CreateOrderAsync(
+            StandardRequest("user-1", Guid.NewGuid().ToString("N")) with { Items = OneLine(productId, quantity: 5) });
+        created.Value.Status.Should().Be(nameof(OrderStatus.Paid));
+
+        var result = await _harness.OrderService.CancelOwnOrderAsync("user-1", created.Value.OrderNumber);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Status.Should().Be(nameof(OrderStatus.Cancelled));
+        var item = await _harness.InventoryService.GetInventoryItemByIdAsync(itemId);
+        item.Value.QuantityReserved.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task CancelOwnOrderAsync_rejects_an_order_that_is_not_paid()
+    {
+        var created = await _harness.OrderService.CreateOrderAsync(StandardRequest("user-1", Guid.NewGuid().ToString("N")) with
+        {
+            Payment = StandardPayment() with { CardNumber = "4000000000000002" },
+        });
+        created.Value.Status.Should().Be(nameof(OrderStatus.PaymentFailed));
+
+        var result = await _harness.OrderService.CancelOwnOrderAsync("user-1", created.Value.OrderNumber);
+
+        result.IsFailure.Should().BeTrue();
+        result.FirstError.Type.Should().Be(ErrorType.Validation);
+    }
+
+    [Fact]
+    public async Task CancelOwnOrderAsync_returns_not_found_for_another_users_order()
+    {
+        var created = await _harness.OrderService.CreateOrderAsync(StandardRequest("user-1", Guid.NewGuid().ToString("N")));
+        created.Value.Status.Should().Be(nameof(OrderStatus.Paid));
+
+        var result = await _harness.OrderService.CancelOwnOrderAsync("user-2", created.Value.OrderNumber);
+
+        result.IsFailure.Should().BeTrue();
+        result.FirstError.Type.Should().Be(ErrorType.NotFound);
     }
 
     [Fact]

@@ -5,6 +5,7 @@ using ECommerceApp.Application.Storefront;
 using ECommerceApp.Web.Models.Reviews;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 
 namespace ECommerceApp.Web.Controllers;
 
@@ -14,9 +15,12 @@ namespace ECommerceApp.Web.Controllers;
 /// arbitrary/bookmarked URL. Resolve() backs the live, no-reload variant
 /// switcher (Milestone 5.2) - strict, server-authoritative, and the only
 /// path a customer's actual in-page interaction ever takes. SubmitReview()
-/// (Milestone 12.1) is a classic form POST, not AJAX, unlike Wishlist's
-/// toggle - a review is substantive content worth a full page reload and a
-/// TempData-surfaced outcome, not a quiet background call.
+/// (Milestone 12.1) and ReportReview() (Milestone 12.2) are classic form
+/// POSTs, not AJAX, unlike Wishlist's toggle - both are substantive actions
+/// worth a full page reload and a TempData-surfaced outcome, not a quiet
+/// background call. Both are also rate-limited per authenticated user
+/// (Milestone 12.2's abuse-protection half) via the "reviewSubmission"/
+/// "reviewReport" policies registered in Program.cs.
 /// </summary>
 public class ProductController : Controller
 {
@@ -53,6 +57,7 @@ public class ProductController : Controller
     }
 
     [Authorize]
+    [EnableRateLimiting("reviewSubmission")]
     [HttpPost("Product/{slug}/Review")]
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> SubmitReview(string slug, ReviewFormViewModel model, CancellationToken cancellationToken)
@@ -69,6 +74,28 @@ public class ProductController : Controller
 
         TempData[result.IsSuccess ? "ReviewMessage" : "ReviewError"] =
             result.IsSuccess ? "Thanks - your review has been posted." : result.FirstError.Message;
+
+        return RedirectToAction(nameof(Details), new { slug });
+    }
+
+    [Authorize]
+    [EnableRateLimiting("reviewReport")]
+    [HttpPost("Product/{slug}/Review/{reviewId}/Report")]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> ReportReview(string slug, int reviewId, ReviewReportFormViewModel model, CancellationToken cancellationToken)
+    {
+        if (!ModelState.IsValid || model.ReviewId != reviewId)
+        {
+            TempData["ReviewError"] = "Please choose a reason before reporting a review.";
+            return RedirectToAction(nameof(Details), new { slug });
+        }
+
+        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
+        var request = new CreateReviewReportRequest(reviewId, model.Reason, model.Comment);
+        var result = await _reviewService.ReportReviewAsync(userId, request, cancellationToken);
+
+        TempData[result.IsSuccess ? "ReviewMessage" : "ReviewError"] =
+            result.IsSuccess ? "Thanks - this review has been reported for moderation." : result.FirstError.Message;
 
         return RedirectToAction(nameof(Details), new { slug });
     }

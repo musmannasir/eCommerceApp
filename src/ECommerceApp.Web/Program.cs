@@ -1,3 +1,4 @@
+using System.Security.Claims;
 using System.Text;
 using System.Threading.RateLimiting;
 using ECommerceApp.Application;
@@ -148,6 +149,42 @@ try
 
             return RateLimitPartition.GetFixedWindowLimiter(
                 partitionKey: httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+                factory: _ => new FixedWindowRateLimiterOptions
+                {
+                    PermitLimit = permitLimit,
+                    Window = TimeSpan.FromSeconds(windowSeconds),
+                    QueueLimit = 0,
+                });
+        });
+
+        // Review submission/reporting (Milestone 12.2) - both actions require
+        // [Authorize], so partitioning by user id (not IP, unlike "auth" above)
+        // limits per-account abuse without penalizing other users behind the
+        // same shared/NAT'd IP address.
+        options.AddPolicy("reviewSubmission", httpContext =>
+        {
+            var configuration = httpContext.RequestServices.GetRequiredService<IConfiguration>();
+            var permitLimit = configuration.GetValue("RateLimiting:ReviewSubmissionPermitLimit", 5);
+            var windowSeconds = configuration.GetValue("RateLimiting:ReviewSubmissionWindowSeconds", 3600);
+
+            return RateLimitPartition.GetFixedWindowLimiter(
+                partitionKey: httpContext.User.FindFirstValue(ClaimTypes.NameIdentifier) ?? "anonymous",
+                factory: _ => new FixedWindowRateLimiterOptions
+                {
+                    PermitLimit = permitLimit,
+                    Window = TimeSpan.FromSeconds(windowSeconds),
+                    QueueLimit = 0,
+                });
+        });
+
+        options.AddPolicy("reviewReport", httpContext =>
+        {
+            var configuration = httpContext.RequestServices.GetRequiredService<IConfiguration>();
+            var permitLimit = configuration.GetValue("RateLimiting:ReviewReportPermitLimit", 10);
+            var windowSeconds = configuration.GetValue("RateLimiting:ReviewReportWindowSeconds", 3600);
+
+            return RateLimitPartition.GetFixedWindowLimiter(
+                partitionKey: httpContext.User.FindFirstValue(ClaimTypes.NameIdentifier) ?? "anonymous",
                 factory: _ => new FixedWindowRateLimiterOptions
                 {
                     PermitLimit = permitLimit,

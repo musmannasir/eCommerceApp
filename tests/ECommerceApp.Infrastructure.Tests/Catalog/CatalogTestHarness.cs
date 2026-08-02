@@ -7,6 +7,7 @@ using ECommerceApp.Infrastructure.Marketing;
 using ECommerceApp.Infrastructure.Orders;
 using ECommerceApp.Infrastructure.Payments;
 using ECommerceApp.Infrastructure.Pricing;
+using ECommerceApp.Infrastructure.Returns;
 using ECommerceApp.Infrastructure.Reviews;
 using ECommerceApp.Infrastructure.Shipping;
 using ECommerceApp.Infrastructure.Storefront;
@@ -38,6 +39,7 @@ public sealed class CatalogTestHarness : IDisposable
     public CartService CartService { get; }
     public WishlistService WishlistService { get; }
     public ReviewService ReviewService { get; }
+    public ReturnService ReturnService { get; }
     public PromotionService PromotionService { get; }
     public TaxService TaxService { get; }
     public ShippingService ShippingService { get; }
@@ -78,7 +80,7 @@ public sealed class CatalogTestHarness : IDisposable
         PricingService = new PricingService(new ConfigurationBuilder().Build());
         RecommendationService = new RecommendationService(DbContext);
         WishlistService = new WishlistService(DbContext, Clock);
-        ReviewService = new ReviewService(DbContext);
+        ReviewService = new ReviewService(DbContext, Clock);
         ProductDetailService = new ProductDetailService(DbContext, PricingService, RecommendationService, RecentlyViewedService, WishlistService, ReviewService);
         PromotionService = new PromotionService(DbContext);
         TaxService = new TaxService(DbContext, configuration);
@@ -88,7 +90,8 @@ public sealed class CatalogTestHarness : IDisposable
         AddressService = new AddressService(DbContext, Clock);
         PaymentGateway = new SimulatedPaymentGateway(Clock);
         InventoryService = new InventoryService(DbContext, Clock, new FakeCurrentUserService());
-        OrderService = new OrderService(DbContext, PaymentGateway, InventoryService, Clock);
+        ReturnService = new ReturnService(DbContext, Clock, new FakeCurrentUserService());
+        OrderService = new OrderService(DbContext, PaymentGateway, InventoryService, ReturnService, Clock);
     }
 
     public void Dispose() => DbContext.Dispose();

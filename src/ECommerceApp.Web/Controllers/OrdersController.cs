@@ -2,7 +2,12 @@ using System.Security.Claims;
 using ECommerceApp.Application.Carts;
 using ECommerceApp.Application.Carts.Models;
 using ECommerceApp.Application.Orders;
+using ECommerceApp.Application.Returns;
+using ECommerceApp.Application.Returns.Models;
+using ECommerceApp.Domain.Common;
+using ECommerceApp.Domain.Orders;
 using ECommerceApp.Domain.Payments;
+using ECommerceApp.Web.Models.Returns;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -27,11 +32,13 @@ public class OrdersController : Controller
 {
     private readonly IOrderService _orderService;
     private readonly ICartService _cartService;
+    private readonly IReturnService _returnService;
 
-    public OrdersController(IOrderService orderService, ICartService cartService)
+    public OrdersController(IOrderService orderService, ICartService cartService, IReturnService returnService)
     {
         _orderService = orderService;
         _cartService = cartService;
+        _returnService = returnService;
     }
 
     [HttpGet("")]
@@ -114,6 +121,91 @@ public class OrdersController : Controller
         }
 
         return RedirectToAction("Index", "Cart");
+    }
+
+    /// <summary>
+    /// Self-service cancellation (Milestone 13.1) - only a Paid order (per
+    /// OrderStatusTransitions), the same rule and reservation-release logic
+    /// the admin Cancel action (Milestone 10.2) uses, just ownership-scoped.
+    /// Still no refund (Milestone 13.3's job).
+    /// </summary>
+    [HttpPost("{orderNumber}/Cancel")]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> Cancel(string orderNumber, CancellationToken cancellationToken)
+    {
+        var result = await _orderService.CancelOwnOrderAsync(UserId, orderNumber, cancellationToken);
+        if (result.IsFailure && result.FirstError.Type == ErrorType.NotFound)
+        {
+            return NotFound();
+        }
+
+        TempData[result.IsSuccess ? "Message" : "Error"] = result.IsSuccess ? "Order cancelled." : result.FirstError.Message;
+        return RedirectToAction(nameof(Details), new { orderNumber });
+    }
+
+    /// <summary>
+    /// Only a Delivered order with no open (Requested/Approved) return
+    /// request is offered a form - other cases redirect back to Details
+    /// with an explanatory message rather than showing a pointless form.
+    /// </summary>
+    [HttpGet("{orderNumber}/Return")]
+    public async Task<IActionResult> Return(string orderNumber, CancellationToken cancellationToken)
+    {
+        var result = await _orderService.GetByOrderNumberAsync(UserId, orderNumber, cancellationToken);
+        if (result.IsFailure)
+        {
+            return NotFound();
+        }
+
+        var order = result.Value;
+        if (order.Status != nameof(OrderStatus.Delivered))
+        {
+            TempData["Error"] = "Only a delivered order can be returned.";
+            return RedirectToAction(nameof(Details), new { orderNumber });
+        }
+
+        if (order.ReturnRequests.Any(r => r.Status is ReturnRequestStatus.Requested or ReturnRequestStatus.Approved))
+        {
+            TempData["Error"] = "A return request for this order is already pending.";
+            return RedirectToAction(nameof(Details), new { orderNumber });
+        }
+
+        var model = new ReturnRequestFormViewModel
+        {
+            Items = order.Items.Select(i => new ReturnRequestFormItemViewModel
+            {
+                OrderItemId = i.Id,
+                ProductName = i.ProductName,
+                OrderedQuantity = i.Quantity,
+            }).ToList(),
+        };
+
+        ViewData["OrderNumber"] = orderNumber;
+        return View(model);
+    }
+
+    [HttpPost("{orderNumber}/Return")]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> SubmitReturn(string orderNumber, ReturnRequestFormViewModel model, CancellationToken cancellationToken)
+    {
+        var items = model.Items
+            .Where(i => i.Quantity > 0)
+            .Select(i => new CreateReturnRequestItem(i.OrderItemId, i.Quantity))
+            .ToList();
+
+        var request = new CreateReturnRequestRequest(orderNumber, model.Reason, model.Comment, items);
+        var result = await _returnService.SubmitReturnRequestAsync(UserId, request, cancellationToken);
+
+        if (result.IsFailure && result.FirstError.Type == ErrorType.NotFound)
+        {
+            return NotFound();
+        }
+
+        TempData[result.IsSuccess ? "Message" : "Error"] = result.IsSuccess
+            ? "Your return request has been submitted."
+            : result.FirstError.Message;
+
+        return RedirectToAction(nameof(Details), new { orderNumber });
     }
 
     private string UserId => User.FindFirstValue(ClaimTypes.NameIdentifier)!;

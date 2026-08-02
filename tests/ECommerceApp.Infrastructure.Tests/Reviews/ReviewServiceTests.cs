@@ -8,6 +8,7 @@ using ECommerceApp.Application.Shipping.Models;
 using ECommerceApp.Application.Storefront.Models;
 using ECommerceApp.Domain.Catalog;
 using ECommerceApp.Domain.Common;
+using ECommerceApp.Domain.Reviews;
 using ECommerceApp.Infrastructure.Tests.Catalog;
 using FluentAssertions;
 
@@ -108,6 +109,102 @@ public class ReviewServiceTests : IDisposable
         page.TotalCount.Should().Be(2);
         page.Items.Should().ContainSingle();
         page.Items[0].Body.Should().Be("Newest.");
+    }
+
+    [Fact]
+    public async Task Reporting_a_review_succeeds()
+    {
+        var product = await SeedProductAsync();
+        var review = await _harness.ReviewService.SubmitReviewAsync("author", new CreateReviewRequest(product.Id, 1, null, "Bad review."));
+
+        var result = await _harness.ReviewService.ReportReviewAsync(
+            "reporter-1", new CreateReviewReportRequest(review.Value.Id, ReviewReportReason.Spam, "Looks like spam."));
+
+        result.IsSuccess.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task Reporting_the_same_review_twice_by_the_same_user_is_rejected_as_a_conflict()
+    {
+        var product = await SeedProductAsync();
+        var review = await _harness.ReviewService.SubmitReviewAsync("author", new CreateReviewRequest(product.Id, 1, null, "Bad review."));
+        await _harness.ReviewService.ReportReviewAsync("reporter-1", new CreateReviewReportRequest(review.Value.Id, ReviewReportReason.Spam, null));
+
+        var result = await _harness.ReviewService.ReportReviewAsync("reporter-1", new CreateReviewReportRequest(review.Value.Id, ReviewReportReason.Other, null));
+
+        result.IsFailure.Should().BeTrue();
+        result.FirstError.Type.Should().Be(ErrorType.Conflict);
+    }
+
+    [Fact]
+    public async Task Reporting_an_unknown_review_is_not_found()
+    {
+        var result = await _harness.ReviewService.ReportReviewAsync("reporter-1", new CreateReviewReportRequest(999999, ReviewReportReason.Other, null));
+
+        result.IsFailure.Should().BeTrue();
+        result.FirstError.Type.Should().Be(ErrorType.NotFound);
+    }
+
+    [Fact]
+    public async Task Moderation_queue_only_includes_reviews_with_open_reports()
+    {
+        var product = await SeedProductAsync();
+        var reported = await _harness.ReviewService.SubmitReviewAsync("author-1", new CreateReviewRequest(product.Id, 1, "Reported", "Reported body."));
+        await _harness.ReviewService.SubmitReviewAsync("author-2", new CreateReviewRequest(product.Id, 5, "Not reported", "Fine body."));
+        await _harness.ReviewService.ReportReviewAsync("reporter-1", new CreateReviewReportRequest(reported.Value.Id, ReviewReportReason.Offensive, "Rude."));
+        await _harness.ReviewService.ReportReviewAsync("reporter-2", new CreateReviewReportRequest(reported.Value.Id, ReviewReportReason.Spam, null));
+
+        var queue = await _harness.ReviewService.GetModerationQueueAsync(new ReviewModerationQuery());
+
+        queue.Items.Should().ContainSingle();
+        queue.Items[0].ReviewId.Should().Be(reported.Value.Id);
+        queue.Items[0].ReportCount.Should().Be(2);
+        queue.Items[0].Reports.Should().HaveCount(2);
+        queue.Items[0].ProductName.Should().Be("Widget");
+    }
+
+    [Fact]
+    public async Task Dismissing_reports_clears_them_and_the_review_stays_live()
+    {
+        var product = await SeedProductAsync();
+        var review = await _harness.ReviewService.SubmitReviewAsync("author", new CreateReviewRequest(product.Id, 1, null, "Body."));
+        await _harness.ReviewService.ReportReviewAsync("reporter-1", new CreateReviewReportRequest(review.Value.Id, ReviewReportReason.Spam, null));
+
+        var result = await _harness.ReviewService.DismissReportsAsync(review.Value.Id);
+
+        result.IsSuccess.Should().BeTrue();
+        var queue = await _harness.ReviewService.GetModerationQueueAsync(new ReviewModerationQuery());
+        queue.Items.Should().BeEmpty();
+        var summary = await _harness.ReviewService.GetRatingSummaryAsync(product.Id);
+        summary.ReviewCount.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task Removing_a_review_soft_deletes_it_and_excludes_it_from_reads()
+    {
+        var product = await SeedProductAsync();
+        var review = await _harness.ReviewService.SubmitReviewAsync("author", new CreateReviewRequest(product.Id, 1, null, "Body."));
+        await _harness.ReviewService.ReportReviewAsync("reporter-1", new CreateReviewReportRequest(review.Value.Id, ReviewReportReason.Offensive, null));
+
+        var result = await _harness.ReviewService.RemoveReviewAsync(review.Value.Id);
+
+        result.IsSuccess.Should().BeTrue();
+        var summary = await _harness.ReviewService.GetRatingSummaryAsync(product.Id);
+        summary.ReviewCount.Should().Be(0);
+        var reviews = await _harness.ReviewService.GetReviewsAsync(product.Id, page: 1, pageSize: 10);
+        reviews.Items.Should().BeEmpty();
+        var queue = await _harness.ReviewService.GetModerationQueueAsync(new ReviewModerationQuery());
+        queue.Items.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task Dismissing_or_removing_an_unknown_review_is_not_found()
+    {
+        var dismissResult = await _harness.ReviewService.DismissReportsAsync(999999);
+        var removeResult = await _harness.ReviewService.RemoveReviewAsync(999999);
+
+        dismissResult.FirstError.Type.Should().Be(ErrorType.NotFound);
+        removeResult.FirstError.Type.Should().Be(ErrorType.NotFound);
     }
 
     private async Task<Product> SeedProductAsync(bool isActive = true, bool isPublished = true)

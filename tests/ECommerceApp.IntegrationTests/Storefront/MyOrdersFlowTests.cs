@@ -254,6 +254,83 @@ public class MyOrdersFlowTests
             new Dictionary<string, string> { ["__RequestVerificationToken"] = token }));
     }
 
+    [Fact]
+    public async Task A_customer_can_cancel_their_own_paid_order()
+    {
+        var product = await SeedProductAsync();
+        await SeedShippingMethodAsync("US", "MT", baseRate: 5m, ratePerKg: 0m);
+
+        var client = _fixture.Factory.CreateClient();
+        var email = $"cancelself.{Guid.NewGuid():N}@example.com";
+        await client.RegisterViaFormAsync(email, "Str0ng!Passw0rd", "Cancel", "Self");
+        var addressId = await CreateAddressAsync(client, "US", "MT");
+
+        await AddToCartAsync(client, product.Id);
+        var orderNumber = await PlaceOrderAsync(client, addressId, cardNumber: "4242424242424242");
+
+        var body = await CancelOrderAsync(client, orderNumber);
+
+        body.Should().Contain("Order cancelled.").And.Contain(nameof(ECommerceApp.Domain.Orders.OrderStatus.Cancelled));
+        body.Should().NotContain("Cancel order");
+    }
+
+    [Fact]
+    public async Task A_customer_cannot_cancel_another_customers_order()
+    {
+        var product = await SeedProductAsync();
+        await SeedShippingMethodAsync("US", "WY", baseRate: 5m, ratePerKg: 0m);
+
+        var ownerClient = _fixture.Factory.CreateClient();
+        var ownerEmail = $"cancelowner.{Guid.NewGuid():N}@example.com";
+        await ownerClient.RegisterViaFormAsync(ownerEmail, "Str0ng!Passw0rd", "Cancel", "Owner");
+        var addressId = await CreateAddressAsync(ownerClient, "US", "WY");
+        await AddToCartAsync(ownerClient, product.Id);
+        var orderNumber = await PlaceOrderAsync(ownerClient, addressId, cardNumber: "4242424242424242");
+
+        var intruderClient = _fixture.Factory.CreateClient();
+        var intruderEmail = $"cancelintruder.{Guid.NewGuid():N}@example.com";
+        await intruderClient.RegisterViaFormAsync(intruderEmail, "Str0ng!Passw0rd", "Cancel", "Intruder");
+
+        var detailsHtml = await intruderClient.GetStringAsync("/"); // establish antiforgery cookie
+        var token = HtmlHelpers.ExtractMetaCsrfToken(detailsHtml);
+        var request = new HttpRequestMessage(HttpMethod.Post, $"/Orders/{orderNumber}/Cancel")
+        {
+            Content = new FormUrlEncodedContent(new Dictionary<string, string> { ["__RequestVerificationToken"] = token }),
+        };
+        var response = await intruderClient.SendAsync(request);
+
+        ((int)response.StatusCode).Should().Be(404);
+    }
+
+    [Fact]
+    public async Task Cancelling_an_order_that_is_not_paid_is_rejected()
+    {
+        var product = await SeedProductAsync();
+        await SeedShippingMethodAsync("US", "DE", baseRate: 5m, ratePerKg: 0m);
+
+        var client = _fixture.Factory.CreateClient();
+        var email = $"cancelunpaid.{Guid.NewGuid():N}@example.com";
+        await client.RegisterViaFormAsync(email, "Str0ng!Passw0rd", "Cancel", "Unpaid");
+        var addressId = await CreateAddressAsync(client, "US", "DE");
+
+        await AddToCartAsync(client, product.Id);
+        var orderNumber = await PlaceOrderAsync(client, addressId, cardNumber: "4000000000000002");
+
+        var body = await CancelOrderAsync(client, orderNumber);
+
+        body.Should().Contain("Only a paid order can be cancelled.");
+    }
+
+    private static async Task<string> CancelOrderAsync(HttpClient client, string orderNumber)
+    {
+        var detailsHtml = await client.GetStringAsync($"/Orders/{orderNumber}");
+        var token = HtmlHelpers.ExtractAntiForgeryToken(detailsHtml);
+
+        var response = await client.PostAsync($"/Orders/{orderNumber}/Cancel", new FormUrlEncodedContent(
+            new Dictionary<string, string> { ["__RequestVerificationToken"] = token }));
+        return await response.Content.ReadAsStringAsync();
+    }
+
     private static async Task AddToCartAsync(HttpClient client, int productId)
     {
         var homeHtml = await client.GetStringAsync("/");

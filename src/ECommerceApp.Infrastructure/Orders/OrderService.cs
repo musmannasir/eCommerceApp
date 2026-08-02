@@ -5,6 +5,7 @@ using ECommerceApp.Application.Inventory.Models;
 using ECommerceApp.Application.Orders;
 using ECommerceApp.Application.Orders.Models;
 using ECommerceApp.Application.Payments;
+using ECommerceApp.Application.Returns;
 using ECommerceApp.Domain.Common;
 using ECommerceApp.Domain.Inventory;
 using ECommerceApp.Domain.Orders;
@@ -32,13 +33,16 @@ public sealed class OrderService : IOrderService
     private readonly ApplicationDbContext _dbContext;
     private readonly IPaymentGateway _paymentGateway;
     private readonly IInventoryService _inventoryService;
+    private readonly IReturnService _returnService;
     private readonly IClock _clock;
 
-    public OrderService(ApplicationDbContext dbContext, IPaymentGateway paymentGateway, IInventoryService inventoryService, IClock clock)
+    public OrderService(
+        ApplicationDbContext dbContext, IPaymentGateway paymentGateway, IInventoryService inventoryService, IReturnService returnService, IClock clock)
     {
         _dbContext = dbContext;
         _paymentGateway = paymentGateway;
         _inventoryService = inventoryService;
+        _returnService = returnService;
         _clock = clock;
     }
 
@@ -47,7 +51,7 @@ public sealed class OrderService : IOrderService
         var existing = await FindByIdempotencyKeyAsync(request.UserId, request.IdempotencyKey, cancellationToken);
         if (existing is not null)
         {
-            return Result.Success(ToDto(existing));
+            return Result.Success(await ToDtoAsync(existing, cancellationToken));
         }
 
         var address = request.Address;
@@ -107,7 +111,7 @@ public sealed class OrderService : IOrderService
             var raced = await FindByIdempotencyKeyAsync(request.UserId, request.IdempotencyKey, cancellationToken);
             if (raced is not null)
             {
-                return Result.Success(ToDto(raced));
+                return Result.Success(await ToDtoAsync(raced, cancellationToken));
             }
 
             throw;
@@ -168,7 +172,7 @@ public sealed class OrderService : IOrderService
             order.StockIssueMessage = stockIssueMessage;
             await _dbContext.SaveChangesAsync(cancellationToken);
 
-            return Result.Success(ToDto(order));
+            return Result.Success(await ToDtoAsync(order, cancellationToken));
         }
 
         var chargeResult = await _paymentGateway.ChargeAsync(request.Payment with { Amount = order.GrandTotal }, cancellationToken);
@@ -195,7 +199,7 @@ public sealed class OrderService : IOrderService
 
         await _dbContext.SaveChangesAsync(cancellationToken);
 
-        return Result.Success(ToDto(order));
+        return Result.Success(await ToDtoAsync(order, cancellationToken));
     }
 
     public async Task<Result<PagedResult<OrderListItemDto>>> GetPagedAsync(OrderQuery query, CancellationToken cancellationToken = default)
@@ -255,7 +259,7 @@ public sealed class OrderService : IOrderService
         var order = await FindByIdempotencyKeyAsync(userId, idempotencyKey, cancellationToken);
         return order is null
             ? Result.Failure<OrderDto>(Error.NotFound("order.not_found", "Order not found."))
-            : Result.Success(ToDto(order));
+            : Result.Success(await ToDtoAsync(order, cancellationToken));
     }
 
     public async Task<Result<OrderDto>> GetByOrderNumberAsync(string userId, string orderNumber, CancellationToken cancellationToken = default)
@@ -268,7 +272,7 @@ public sealed class OrderService : IOrderService
 
         return order is null
             ? Result.Failure<OrderDto>(Error.NotFound("order.not_found", "Order not found."))
-            : Result.Success(ToDto(order));
+            : Result.Success(await ToDtoAsync(order, cancellationToken));
     }
 
     public async Task<Result<OrderDto>> GetByIdAsync(int id, CancellationToken cancellationToken = default)
@@ -281,7 +285,7 @@ public sealed class OrderService : IOrderService
 
         return order is null
             ? Result.Failure<OrderDto>(Error.NotFound("order.not_found", "Order not found."))
-            : Result.Success(ToDto(order));
+            : Result.Success(await ToDtoAsync(order, cancellationToken));
     }
 
     public async Task<Result<OrderDto>> CancelAsync(int id, CancellationToken cancellationToken = default)
@@ -297,6 +301,28 @@ public sealed class OrderService : IOrderService
             return Result.Failure<OrderDto>(Error.NotFound("order.not_found", "Order not found."));
         }
 
+        return await CancelOrderAsync(order, cancellationToken);
+    }
+
+    public async Task<Result<OrderDto>> CancelOwnOrderAsync(string userId, string orderNumber, CancellationToken cancellationToken = default)
+    {
+        var order = await _dbContext.Orders
+            .Include(o => o.Items)
+            .Include(o => o.Payment)
+            .Include(o => o.Shipment)
+            .FirstOrDefaultAsync(o => o.OrderNumber == orderNumber && o.UserId == userId, cancellationToken);
+
+        if (order is null)
+        {
+            return Result.Failure<OrderDto>(Error.NotFound("order.not_found", "Order not found."));
+        }
+
+        return await CancelOrderAsync(order, cancellationToken);
+    }
+
+    /// <summary>Shared by the admin (id-scoped) and customer (ownership-scoped) cancel entry points - same rule, same reservation release, different lookup.</summary>
+    private async Task<Result<OrderDto>> CancelOrderAsync(Order order, CancellationToken cancellationToken)
+    {
         if (!OrderStatusTransitions.CanTransition(order.Status, OrderStatus.Cancelled))
         {
             return Result.Failure<OrderDto>(Error.Validation(
@@ -316,7 +342,7 @@ public sealed class OrderService : IOrderService
         order.Status = OrderStatus.Cancelled;
         await _dbContext.SaveChangesAsync(cancellationToken);
 
-        return Result.Success(ToDto(order));
+        return Result.Success(await ToDtoAsync(order, cancellationToken));
     }
 
     public async Task<Result<OrderDto>> UpdateAdminNotesAsync(int id, string? notes, CancellationToken cancellationToken = default)
@@ -335,7 +361,7 @@ public sealed class OrderService : IOrderService
         order.AdminNotes = notes;
         await _dbContext.SaveChangesAsync(cancellationToken);
 
-        return Result.Success(ToDto(order));
+        return Result.Success(await ToDtoAsync(order, cancellationToken));
     }
 
     public async Task<Result<OrderDto>> ShipAsync(int id, ShipOrderRequest request, CancellationToken cancellationToken = default)
@@ -378,7 +404,7 @@ public sealed class OrderService : IOrderService
         order.Status = OrderStatus.Shipped;
         await _dbContext.SaveChangesAsync(cancellationToken);
 
-        return Result.Success(ToDto(order));
+        return Result.Success(await ToDtoAsync(order, cancellationToken));
     }
 
     public async Task<Result<OrderDto>> MarkDeliveredAsync(int id, CancellationToken cancellationToken = default)
@@ -404,7 +430,7 @@ public sealed class OrderService : IOrderService
         order.Status = OrderStatus.Delivered;
         await _dbContext.SaveChangesAsync(cancellationToken);
 
-        return Result.Success(ToDto(order));
+        return Result.Success(await ToDtoAsync(order, cancellationToken));
     }
 
     private Task<Order?> FindByIdempotencyKeyAsync(string userId, string idempotencyKey, CancellationToken cancellationToken) =>
@@ -431,19 +457,25 @@ public sealed class OrderService : IOrderService
         return candidates.OrderByDescending(i => i.QuantityAvailable).FirstOrDefault();
     }
 
-    private static OrderDto ToDto(Order order) => new(
-        order.Id, order.OrderNumber, order.Status.ToString(), order.CreatedAtUtc,
-        order.ShippingLabel, order.ShippingFullName, order.ShippingPhone, order.ShippingLine1, order.ShippingLine2,
-        order.ShippingCity, order.ShippingRegionCode, order.ShippingPostalCode, order.ShippingCountryCode,
-        order.ShippingMethodName, order.ShippingCost,
-        order.AppliedCouponCode, order.AppliedPromotionName, order.PromotionDiscountAmount,
-        order.Subtotal, order.Tax, order.GrandTotal,
-        order.Payment?.Status.ToString() ?? order.Status.ToString(),
-        order.Payment?.MaskedCardNumber, order.Payment?.CardBrand, order.Payment?.DeclineReason,
-        order.StockIssueMessage,
-        order.AdminNotes,
-        order.Shipment?.Carrier, order.Shipment?.TrackingNumber, order.Shipment?.ShippedAtUtc, order.Shipment?.DeliveredAtUtc,
-        order.Items.Select(ToItemDto).ToList());
+    private async Task<OrderDto> ToDtoAsync(Order order, CancellationToken cancellationToken)
+    {
+        var returnRequests = await _returnService.GetReturnRequestsForOrderAsync(order.Id, cancellationToken);
+
+        return new(
+            order.Id, order.OrderNumber, order.Status.ToString(), order.CreatedAtUtc,
+            order.ShippingLabel, order.ShippingFullName, order.ShippingPhone, order.ShippingLine1, order.ShippingLine2,
+            order.ShippingCity, order.ShippingRegionCode, order.ShippingPostalCode, order.ShippingCountryCode,
+            order.ShippingMethodName, order.ShippingCost,
+            order.AppliedCouponCode, order.AppliedPromotionName, order.PromotionDiscountAmount,
+            order.Subtotal, order.Tax, order.GrandTotal,
+            order.Payment?.Status.ToString() ?? order.Status.ToString(),
+            order.Payment?.MaskedCardNumber, order.Payment?.CardBrand, order.Payment?.DeclineReason,
+            order.StockIssueMessage,
+            order.AdminNotes,
+            order.Shipment?.Carrier, order.Shipment?.TrackingNumber, order.Shipment?.ShippedAtUtc, order.Shipment?.DeliveredAtUtc,
+            order.Items.Select(ToItemDto).ToList(),
+            returnRequests);
+    }
 
     private static OrderItemDto ToItemDto(OrderItem item) => new(
         item.Id, item.ProductId, item.ProductVariantId, item.ProductName, item.Sku, item.VariantDescription,
