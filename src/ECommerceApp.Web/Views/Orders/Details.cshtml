@@ -6,7 +6,11 @@
     var stockFailed = Model.Status == nameof(OrderStatus.StockReservationFailed);
     var paymentFailed = Model.Status == nameof(OrderStatus.PaymentFailed);
     var cancelled = Model.Status == nameof(OrderStatus.Cancelled);
+    var paid = Model.Status == nameof(OrderStatus.Paid);
+    var delivered = Model.Status == nameof(OrderStatus.Delivered);
     var chargedSuccessfully = Model.PaymentStatus == nameof(ECommerceApp.Domain.Payments.PaymentStatus.Succeeded);
+    var latestReturnRequest = Model.ReturnRequests.FirstOrDefault();
+    var hasOpenReturnRequest = Model.ReturnRequests.Any(r => r.Status is ReturnRequestStatus.Requested or ReturnRequestStatus.Approved);
 
     var steps = new List<(string Label, bool Done, bool Failed)>();
     if (paymentFailed)
@@ -39,6 +43,10 @@
     <a asp-action="Index" class="btn btn-outline-secondary">Back to my orders</a>
 </div>
 
+@if (TempData["Message"] is string message)
+{
+    <div class="alert alert-success">@message</div>
+}
 @if (TempData["Error"] is string error)
 {
     <div class="alert alert-danger">@error</div>
@@ -91,6 +99,31 @@
                     @if (Model.DeliveredAtUtc is not null)
                     {
                         <div class="small text-success">Delivered @Model.DeliveredAtUtc?.ToString("f") UTC</div>
+                    }
+                </div>
+            </div>
+        }
+
+        @if (latestReturnRequest is not null)
+        {
+            var returnCls = latestReturnRequest.Status switch
+            {
+                ReturnRequestStatus.Approved => "text-bg-success",
+                ReturnRequestStatus.Rejected => "text-bg-danger",
+                _ => "text-bg-secondary",
+            };
+            <div class="card mb-3">
+                <div class="card-body">
+                    <div class="text-muted small">Return request</div>
+                    <span class="badge @returnCls">@latestReturnRequest.Status</span>
+                    <span>@latestReturnRequest.Reason</span>
+                    @if (!string.IsNullOrEmpty(latestReturnRequest.Comment))
+                    {
+                        <div class="small text-muted">@latestReturnRequest.Comment</div>
+                    }
+                    @if (latestReturnRequest.Status == ReturnRequestStatus.Rejected && !string.IsNullOrEmpty(latestReturnRequest.RejectionReason))
+                    {
+                        <div class="small text-danger">Reason: @latestReturnRequest.RejectionReason</div>
                     }
                 </div>
             </div>
@@ -176,8 +209,19 @@
         {
             <a asp-action="Invoice" asp-route-orderNumber="@Model.OrderNumber" class="btn btn-outline-secondary w-100 mb-2">Print invoice</a>
         }
-        <form asp-action="Reorder" asp-route-orderNumber="@Model.OrderNumber" method="post">
+        <form asp-action="Reorder" asp-route-orderNumber="@Model.OrderNumber" method="post" class="mb-2">
             <button type="submit" class="btn btn-outline-primary w-100">Reorder these items</button>
         </form>
+        @if (paid)
+        {
+            <form asp-action="Cancel" asp-route-orderNumber="@Model.OrderNumber" method="post"
+                  onsubmit="return confirm('Cancel this order? This does not process a refund.');">
+                <button type="submit" class="btn btn-outline-danger w-100">Cancel order</button>
+            </form>
+        }
+        @if (delivered && !hasOpenReturnRequest)
+        {
+            <a asp-action="Return" asp-route-orderNumber="@Model.OrderNumber" class="btn btn-outline-secondary w-100">Request a return</a>
+        }
     </div>
 </div>

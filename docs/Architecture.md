@@ -1969,6 +1969,158 @@ verification - sees the "Verified Purchase" badge on their own review;
 and revisiting the tab shows "You've already reviewed this product" with
 the form replaced accordingly.
 
+## Moderation & abuse protection (Milestone 12.2)
+
+**Same brief-text gap as Milestones 6.1-12.1** - scope was agreed with the
+user as a concrete reading of the milestone name, building directly on the
+gaps Milestone 12.1's own scope note flagged: reviews published immediately
+with no report mechanism, no moderation queue, and no rate limiting. This
+closes out Milestone 12 in its entirety (12.1 Review submission & rating
+summary, 12.2 Moderation & abuse protection).
+
+**`ReviewReport` is `BaseEntity`, not `AuditableEntity`** - a report is a
+one-time event that's never edited after the fact, the same reasoning
+`WishlistItem` uses for its own toggle records (contrast with `Review`
+itself, which is `AuditableEntity` since Milestone 12.1 already anticipated
+this milestone's soft-delete need). At most one report per `(Review,
+reporter)`, enforced via a unique index - mirrors `Review`'s own
+one-per-`(user, product)` constraint exactly.
+
+**Acting on a review clears its reports rather than tracking a
+resolved/unresolved status.** Dismiss deletes every `ReviewReport` row for
+that review (it stays live); Remove soft-deletes the review itself
+(`IsDeleted = true`, via the same mechanism Milestone 12.1's `Review`
+entity already gets automatically from `AuditableEntity`/the global
+query filter) and also clears its reports. Either way, the moderation
+queue's definition - "every review with at least one report row" - stays
+simple and self-maintaining, with no separate status enum to keep in
+sync. There is no persistent moderation audit log in this milestone's
+scope; once acted on, a review's report history is gone.
+
+**The moderation queue reuses `Policies.CanManageOrders`** (already grants
+`CustomerSupport`) rather than a new dedicated policy/role - no
+"Moderator" role exists anywhere else in this app, and adding one for a
+single admin screen would be speculative infrastructure with no other
+consumer.
+
+**Rate limiting mirrors Milestone 1's existing `"auth"` policy shape, but
+partitions by authenticated user id instead of client IP.** Both new
+policies (`reviewSubmission`, `reviewReport`) require `[Authorize]`
+already, so per-account limiting is the correct unit here - IP-based
+partitioning (right for pre-auth endpoints like login) would let one
+abusive account escape scrutiny behind a shared/NAT'd IP, or wrongly
+throttle innocent users sharing that IP with an abuser. Both policies are
+config-driven with generous defaults (5 reviews/hour, 10 reports/hour) via
+the same `IConfiguration`-resolved-per-request pattern the `"auth"` policy
+established, including working test-time overrides through
+`WebApplicationFactory` for the same reason `AuthWebApplicationFactory`
+already raises `RateLimiting:AuthPermitLimit` - functional tests submit
+several reviews/reports per run and would otherwise trip the limiter.
+
+**No self-report guard.** `ReviewDto` deliberately doesn't expose the
+review's owning `UserId` (Milestone 12.1's own privacy-conscious design),
+so checking "is this my own review" would need new plumbing just to block
+a case that's harmless anyway - a customer reporting their own review is
+low-signal noise a moderator dismisses in one click, not a real abuse
+vector worth the extra code.
+
+**Manually verified** against the real dev database: one customer
+reported a second customer's review; the review surfaced in the admin
+moderation queue (`/Admin/Reviews`) with the correct product, reviewer,
+rating, and report detail (reporter, reason, comment, timestamp);
+Dismiss cleared the queue while the review remained visible on the
+product page; and Remove (exercised on a second reported review) hid it
+from the product page entirely via the existing soft-delete/query-filter
+mechanism, with the queue returning to empty afterward.
+
+## Cancellation (Milestone 13.1)
+
+**Same brief-text gap as Milestones 6.1-12.2** - scope was agreed with the
+user as a concrete reading of the milestone name. Milestone 10.2 already
+built order cancellation, but admin-only, with no ownership check; this
+milestone is its natural, non-speculative customer-facing counterpart,
+following the exact Milestone 10.x (admin) -> 11.x (customer) pattern
+already established for the rest of order management (dashboard, detail,
+tracking, invoice, reorder).
+
+**`CancelOwnOrderAsync` and the admin `CancelAsync` now share one private
+`CancelOrderAsync(Order, ...)` helper.** Only the lookup differs -
+`CancelAsync(int id)` is admin-wide (no ownership check, matching
+`GetByIdAsync`'s own precedent), `CancelOwnOrderAsync(userId,
+orderNumber)` is ownership-scoped (matching `GetByOrderNumberAsync`'s own
+precedent: another customer's order number returns `NotFound`, never
+their data). Once the order is found, both paths run through the exact
+same state-machine check (`OrderStatusTransitions` - only a `Paid` order,
+never one that's already shipped/delivered/cancelled/failed) and the same
+"release every active reservation" loop - extracting this into a shared
+helper means the cancellation rule and the reservation-release mechanics
+live in exactly one place, not two copies that could drift.
+
+**The customer Details page's "Cancel order" button appears only when
+`Status == Paid`**, mirroring the admin Details page's own visibility
+gate and confirm-dialog UX line for line. Still no refund - Milestone
+13.3 ("Refunds & restocking") is explicitly the milestone that adds one,
+the same deferral Milestone 10.2's own scope note already established.
+
+**Manually verified** against the real dev database: placed a fresh
+order, cancelled it from the customer-facing Details page, confirmed the
+"Order cancelled." message and the status timeline moving to the
+terminal `Cancelled` state, confirmed the Cancel button correctly
+disappeared afterward, and confirmed the `Cancelled` status via a direct
+SQL query against the real database.
+
+## Returns (Milestone 13.2)
+
+**Same brief-text gap as Milestones 6.1-13.1** - scope was agreed with the
+user as a concrete reading of the milestone name, following the exact
+`PurchaseOrder` request/approve/reject workflow shape already established
+elsewhere in this codebase.
+
+**`ReturnRequest`/`ReturnRequestItem` entities, gated purely by
+`OrderStatus.Delivered`.** `Product.ReturnEligibility` is deliberately
+unstructured free text - there is no day-count return window anywhere in
+this app to enforce automatically - so eligibility is a straight order-status
+check, not a date calculation. `ReturnRequestItem` extends `AuditableEntity`,
+matching `OrderItem`/`PurchaseOrderItem`'s own base-type choice for a
+mutable, auditable order line (unlike `GoodsReceiptItem`, which is
+explicitly immutable).
+
+**Scope is Approve/Reject only - no refund, no restock.** "Approved" means
+staff have authorized the return and expect the item(s) shipped back; the
+actual refund and inventory restock only happen once the item is physically
+received, which is Milestone 13.3's ("Refunds & restocking") job - the same
+incremental-`OrderStatus`-value pattern Milestone 10.2/10.3 already used.
+
+**At most one open (Requested/Approved) return request per order**,
+enforced at the service layer via a check-then-insert `AnyAsync` guard - the
+same pattern `Review`/`ReviewReport` already use - rather than a DB-level
+filtered unique index (a precedent that does exist elsewhere, e.g.
+`CartConfiguration`'s `IsUnique().HasFilter(...)` on `UserId`, but staying
+consistent with `Review`'s own simpler pattern was judged the better fit
+here). A customer can resubmit after a rejection, since the item-quantity
+check only considers the individual request being submitted.
+
+**`OrderDto` gained a `ReturnRequests` list**, the same way `IsWishlisted`/
+`RatingSummary`/`Reviews`/`HasReviewed` were bolted onto other
+page-composition DTOs in Milestones 6.3/12.1. `OrderService` depends on
+`IReturnService` directly - no circular dependency, since `ReturnService`
+queries `Orders` via `ApplicationDbContext` directly rather than through
+`IOrderService`, the same relationship `ProductDetailService` already has
+with `IReviewService`.
+
+**The customer Details page offers "Request a return" only on a `Delivered`
+order with no open request already pending**, and shows a status card
+(status, reason, and - if rejected - the rejection reason) once one exists.
+The admin queue at `/Admin/Returns` reuses `Policies.CanManageOrders`, the
+same choice the Milestone 12.2 review-moderation queue made, rather than a
+new dedicated role.
+
+**Manually verified** against the real dev database: placed a fresh order,
+shipped and marked it delivered via the admin UI, submitted a return request
+as the customer (saw it show as "Requested" on the Details page), approved
+it from the admin queue (the queue emptied and the customer's Details page
+updated to "Approved").
+
 ## Framework version note
 
 The brief fixes the stack at **.NET 8**. This machine has only the **.NET 10**

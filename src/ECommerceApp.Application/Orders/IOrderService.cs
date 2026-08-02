@@ -50,4 +50,13 @@ public interface IOrderService
 
     /// <summary>Customer-facing order dashboard (Milestone 11.1) - ownership-scoped, unlike GetPagedAsync's admin-wide queue.</summary>
     Task<Result<CustomerOrderDashboardDto>> GetDashboardAsync(string userId, int page, int pageSize, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Customer self-service cancellation (Milestone 13.1) - the same rule
+    /// CancelAsync enforces (only a Paid order, per OrderStatusTransitions),
+    /// but ownership-scoped like GetByOrderNumberAsync: another customer's
+    /// order number returns NotFound, never their data. Still no refund
+    /// (Milestone 13.3's job).
+    /// </summary>
+    Task<Result<OrderDto>> CancelOwnOrderAsync(string userId, string orderNumber, CancellationToken cancellationToken = default);
 }

@@ -26,6 +26,8 @@ public class AuthWebApplicationFactory : WebApplicationFactory<Web.Program>
                 // address; a dedicated rate-limiting test would use its own factory with the
                 // production default instead of raising it here.
                 ["RateLimiting:AuthPermitLimit"] = "1000",
+                ["RateLimiting:ReviewSubmissionPermitLimit"] = "1000",
+                ["RateLimiting:ReviewReportPermitLimit"] = "1000",
             });
         });
     }

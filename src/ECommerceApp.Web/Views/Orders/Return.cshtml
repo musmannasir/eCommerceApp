@@ -1,0 +1,54 @@
+@using ECommerceApp.Web.Models.Returns
+@model ReturnRequestFormViewModel
+@{
+    ViewData["Title"] = "Request a Return";
+    var orderNumber = ViewData["OrderNumber"] as string;
+}
+
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h1 class="h3 mb-0">Request a return</h1>
+    <a asp-action="Details" asp-route-orderNumber="@orderNumber" class="btn btn-outline-secondary">Back to order</a>
+</div>
+
+<form method="post" asp-action="SubmitReturn" asp-route-orderNumber="@orderNumber" class="col-lg-8">
+    <div class="mb-3">
+        <label class="form-label small fw-semibold">Reason</label>
+        <select class="form-select" name="Reason" required>
+            <option value="Defective">Defective</option>
+            <option value="WrongItem">Wrong item</option>
+            <option value="NoLongerNeeded">No longer needed</option>
+            <option value="NotAsDescribed">Not as described</option>
+            <option value="Other">Other</option>
+        </select>
+    </div>
+    <div class="mb-3">
+        <label class="form-label small fw-semibold" for="comment">Additional details (optional)</label>
+        <textarea class="form-control" id="comment" name="Comment" rows="3" maxlength="1000"></textarea>
+    </div>
+
+    <h2 class="h6">Items to return</h2>
+    <table class="table">
+        <thead>
+            <tr><th>Item</th><th>Ordered</th><th style="width:120px">Quantity to return</th></tr>
+        </thead>
+        <tbody>
+            @for (var i = 0; i < Model.Items.Count; i++)
+            {
+                <tr>
+                    <td>
+                        @Model.Items[i].ProductName
+                        <input type="hidden" name="Items[@i].OrderItemId" value="@Model.Items[i].OrderItemId" />
+                        <input type="hidden" name="Items[@i].ProductName" value="@Model.Items[i].ProductName" />
+                        <input type="hidden" name="Items[@i].OrderedQuantity" value="@Model.Items[i].OrderedQuantity" />
+                    </td>
+                    <td>@Model.Items[i].OrderedQuantity</td>
+                    <td>
+                        <input type="number" class="form-control form-control-sm" name="Items[@i].Quantity" min="0" max="@Model.Items[i].OrderedQuantity" value="0" />
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+
+    <button type="submit" class="btn btn-primary">Submit return request</button>
+</form>

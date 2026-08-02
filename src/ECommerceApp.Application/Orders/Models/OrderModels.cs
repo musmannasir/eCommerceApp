@@ -3,6 +3,7 @@ using ECommerceApp.Application.Carts.Models;
 using ECommerceApp.Application.Checkout.Models;
 using ECommerceApp.Application.Common.Models;
 using ECommerceApp.Application.Payments.Models;
+using ECommerceApp.Application.Returns.Models;
 using ECommerceApp.Application.Shipping.Models;
 
 namespace ECommerceApp.Application.Orders.Models;
@@ -39,7 +40,8 @@ public record OrderDto(
     string? TrackingNumber,
     DateTime? ShippedAtUtc,
     DateTime? DeliveredAtUtc,
-    IReadOnlyList<OrderItemDto> Items);
+    IReadOnlyList<OrderItemDto> Items,
+    IReadOnlyList<ReturnRequestDto> ReturnRequests);
 
 public record OrderItemDto(
     int Id,
