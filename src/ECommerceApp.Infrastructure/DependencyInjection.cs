@@ -10,6 +10,7 @@ using ECommerceApp.Application.Marketing;
 using ECommerceApp.Application.Orders;
 using ECommerceApp.Application.Payments;
 using ECommerceApp.Application.Pricing;
+using ECommerceApp.Application.Reviews;
 using ECommerceApp.Application.Shipping;
 using ECommerceApp.Application.Storefront;
 using ECommerceApp.Application.Taxation;
@@ -28,6 +29,7 @@ using ECommerceApp.Infrastructure.Orders;
 using ECommerceApp.Infrastructure.Payments;
 using ECommerceApp.Infrastructure.Persistence;
 using ECommerceApp.Infrastructure.Pricing;
+using ECommerceApp.Infrastructure.Reviews;
 using ECommerceApp.Infrastructure.Security;
 using ECommerceApp.Infrastructure.Shipping;
 using ECommerceApp.Infrastructure.Storage;
@@ -120,6 +122,7 @@ public static class DependencyInjection
         services.AddScoped<IAddressService, AddressService>();
         services.AddSingleton<IPaymentGateway, SimulatedPaymentGateway>();
         services.AddScoped<IOrderService, OrderService>();
+        services.AddScoped<IReviewService, ReviewService>();
 
         return services;
     }

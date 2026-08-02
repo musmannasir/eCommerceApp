@@ -51,4 +51,13 @@ public interface ICartService
     /// available to check out.
     /// </summary>
     Task<Result<CheckoutInputDto>> GetCheckoutInputAsync(CartOwner owner, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Re-adds a past order's items to the cart, one AddItemAsync call per
+    /// line, so a single unavailable item (deactivated product, invalid
+    /// variant, insufficient stock) is skipped with a reason rather than
+    /// aborting the whole batch. Not gated by order status - even a failed
+    /// order's items are worth re-adding to try again.
+    /// </summary>
+    Task<ReorderResultDto> ReorderAsync(CartOwner owner, IReadOnlyList<ReorderItemRequest> items, CancellationToken cancellationToken = default);
 }

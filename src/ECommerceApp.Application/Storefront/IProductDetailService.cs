@@ -9,14 +9,16 @@ public interface IProductDetailService
     /// selectedVariantId takes precedence over selectedAttributeValueIds if both are
     /// given. If neither resolves to a variant (or the product has no variants at
     /// all), the base product's own SKU/price/stock are shown. userId is null for an
-    /// anonymous visitor - IsWishlisted is always false in that case (Milestone 6.3's
-    /// wishlist is account-only).
+    /// anonymous visitor - IsWishlisted and HasReviewed are always false in that case
+    /// (Milestone 6.3's wishlist and Milestone 12.1's reviews are both account-only).
+    /// reviewsPage pages the Reviews tab's list independently of the rest of the page.
     /// </summary>
     Task<Result<ProductDetailDto>> GetDetailAsync(
         string slug,
         int? selectedVariantId,
         IReadOnlyList<int> selectedAttributeValueIds,
         string? userId = null,
+        int reviewsPage = 1,
         CancellationToken cancellationToken = default);
 
     /// <summary>

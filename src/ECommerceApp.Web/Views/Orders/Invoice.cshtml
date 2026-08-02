@@ -1,0 +1,105 @@
+@using ECommerceApp.Application.Orders.Models
+@inject Microsoft.Extensions.Configuration.IConfiguration Configuration
+@model OrderDto
+@{
+    ViewData["Title"] = $"Invoice - {Model.OrderNumber}";
+    var storeName = Configuration["Store:Name"] ?? "ECommerceApp Store";
+}
+
+<style>
+    @@media print {
+        header, footer, .no-print { display: none !important; }
+    }
+</style>
+
+<div class="no-print d-flex justify-content-between align-items-center mb-3">
+    <a asp-action="Details" asp-route-orderNumber="@Model.OrderNumber" class="btn btn-outline-secondary">Back to order</a>
+    <button type="button" class="btn btn-primary" onclick="window.print()">Print</button>
+</div>
+
+<div class="d-flex justify-content-between align-items-start mb-4">
+    <div>
+        <h1 class="h4 mb-0">@storeName</h1>
+        <div class="text-muted small">Invoice</div>
+    </div>
+    <div class="text-end">
+        <div><strong>Invoice #</strong> @Model.OrderNumber</div>
+        <div class="text-muted small">Date: @Model.PlacedAtUtc.ToString("yyyy-MM-dd")</div>
+    </div>
+</div>
+
+<div class="row mb-4">
+    <div class="col-md-6">
+        <div class="text-muted small">Billed &amp; shipped to</div>
+        <strong>@Model.ShippingFullName</strong>
+        <div class="small">@Model.ShippingPhone</div>
+        <div class="small">
+            @Model.ShippingLine1@(!string.IsNullOrEmpty(Model.ShippingLine2) ? $", {Model.ShippingLine2}" : ""), @Model.ShippingCity@(!string.IsNullOrEmpty(Model.ShippingRegionCode) ? $", {Model.ShippingRegionCode}" : "") @Model.ShippingPostalCode, @Model.ShippingCountryCode
+        </div>
+    </div>
+    <div class="col-md-6">
+        <div class="text-muted small">Payment method</div>
+        <div>@Model.CardBrand @Model.MaskedCardNumber</div>
+        <div class="text-muted small mt-2">Shipping method</div>
+        <div>@Model.ShippingMethodName</div>
+    </div>
+</div>
+
+<table class="table table-sm align-middle">
+    <thead>
+        <tr><th>Item</th><th>SKU</th><th class="text-center">Qty</th><th class="text-end">Unit price</th><th class="text-end">Line total</th></tr>
+    </thead>
+    <tbody>
+        @foreach (var item in Model.Items)
+        {
+            <tr>
+                <td>
+                    @item.ProductName
+                    @if (!string.IsNullOrEmpty(item.VariantDescription))
+                    {
+                        <div class="text-muted small">@item.VariantDescription</div>
+                    }
+                </td>
+                <td class="text-muted small">@item.Sku</td>
+                <td class="text-center">@item.Quantity</td>
+                <td class="text-end">@item.UnitPrice.ToString("0.00")</td>
+                <td class="text-end">@item.LineTotal.ToString("0.00")</td>
+            </tr>
+        }
+    </tbody>
+</table>
+
+<div class="row justify-content-end">
+    <div class="col-md-4">
+        <div class="d-flex justify-content-between">
+            <span>Subtotal</span>
+            <span>@Model.Subtotal.ToString("0.00")</span>
+        </div>
+        @if (Model.PromotionDiscountAmount > 0)
+        {
+            <div class="d-flex justify-content-between text-success">
+                <span>
+                    Discount
+                    @if (!string.IsNullOrEmpty(Model.AppliedCouponCode))
+                    {
+                        <span class="text-muted small">(@Model.AppliedCouponCode)</span>
+                    }
+                </span>
+                <span>-@Model.PromotionDiscountAmount.ToString("0.00")</span>
+            </div>
+        }
+        <div class="d-flex justify-content-between">
+            <span>Tax</span>
+            <span>@Model.Tax.ToString("0.00")</span>
+        </div>
+        <div class="d-flex justify-content-between">
+            <span>Shipping</span>
+            <span>@(Model.ShippingCost == 0 ? "Free" : Model.ShippingCost.ToString("0.00"))</span>
+        </div>
+        <hr />
+        <div class="d-flex justify-content-between fs-5">
+            <strong>Total</strong>
+            <strong>@Model.GrandTotal.ToString("0.00")</strong>
+        </div>
+    </div>
+</div>

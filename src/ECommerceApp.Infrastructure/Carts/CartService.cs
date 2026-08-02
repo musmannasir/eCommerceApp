@@ -352,6 +352,28 @@ public sealed class CartService : ICartService
         return Result.Success(new CheckoutInputDto(checkoutLines, promotionId));
     }
 
+    public async Task<ReorderResultDto> ReorderAsync(CartOwner owner, IReadOnlyList<ReorderItemRequest> items, CancellationToken cancellationToken = default)
+    {
+        var skipped = new List<ReorderSkippedItemDto>();
+        var addedCount = 0;
+
+        foreach (var item in items)
+        {
+            var result = await AddItemAsync(owner, new AddCartItemRequest(item.ProductId, item.ProductVariantId, item.Quantity), cancellationToken);
+            if (result.IsFailure)
+            {
+                skipped.Add(new ReorderSkippedItemDto(item.ProductName, result.FirstError.Message));
+            }
+            else
+            {
+                addedCount++;
+            }
+        }
+
+        var cart = await GetCartAsync(owner, cancellationToken);
+        return new ReorderResultDto(cart, addedCount, skipped);
+    }
+
     /// <summary>
     /// Re-validates the cart's applied promotion (if any) against its current
     /// lines/subtotal via IPromotionService, silently clearing it if it's no

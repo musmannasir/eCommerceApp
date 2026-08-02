@@ -12,7 +12,7 @@
 {
     <div class="alert alert-success">
         <strong>Thank you - your order @order.OrderNumber has been placed and paid.</strong>
-        A confirmation email arrives in a later milestone - nothing has shipped yet.
+        A confirmation email arrives in a later milestone.
     </div>
 }
 else if (stockFailed)
@@ -128,7 +128,8 @@ else
                     <strong>Total</strong>
                     <strong>@order.GrandTotal.ToString("0.00")</strong>
                 </div>
-                <a asp-controller="Catalog" asp-action="Index" class="btn btn-outline-secondary w-100 mt-3">Continue shopping</a>
+                <a asp-controller="Orders" asp-action="Details" asp-route-orderNumber="@order.OrderNumber" class="btn btn-outline-primary w-100 mt-3">View order details</a>
+                <a asp-controller="Catalog" asp-action="Index" class="btn btn-outline-secondary w-100 mt-2">Continue shopping</a>
             </div>
         </div>
     </div>

@@ -29,6 +29,17 @@ public record AddCartItemRequest(int ProductId, int? ProductVariantId, int Quant
 
 public record UpdateCartItemQuantityRequest(int CartItemId, int Quantity);
 
+public record ReorderItemRequest(int ProductId, int? ProductVariantId, int Quantity, string ProductName);
+
+public record ReorderSkippedItemDto(string ProductName, string Reason);
+
+/// <summary>
+/// AddedCount/SkippedItems let the caller (the customer Orders controller)
+/// summarize a partial-success reorder via TempData rather than treating one
+/// unavailable line as a reason to add nothing at all.
+/// </summary>
+public record ReorderResultDto(CartDto Cart, int AddedCount, IReadOnlyList<ReorderSkippedItemDto> SkippedItems);
+
 /// <summary>
 /// IsAvailable is false when the product (or the selected variant) has since
 /// been unpublished, deactivated, or soft-deleted - the line stays visible

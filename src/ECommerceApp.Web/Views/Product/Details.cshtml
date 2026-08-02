@@ -160,9 +160,129 @@
         <p class="text-muted">Shipping methods and rates are calculated at checkout.</p>
     </div>
     <div class="tab-pane fade" id="tab-reviews">
-        <p class="text-muted">No reviews yet. Customer reviews and ratings are coming in a later milestone.</p>
+        @if (TempData["ReviewMessage"] is string reviewMessage)
+        {
+            <div class="alert alert-success">@reviewMessage</div>
+        }
+        @if (TempData["ReviewError"] is string reviewError)
+        {
+            <div class="alert alert-danger">@reviewError</div>
+        }
+
+        <div class="d-flex align-items-center gap-3 mb-3">
+            <div class="display-6">@Model.RatingSummary.AverageRating.ToString("0.0")</div>
+            <div>
+                <div class="text-warning">@Stars((double)Model.RatingSummary.AverageRating)</div>
+                <div class="text-muted small">@Model.RatingSummary.ReviewCount review@(Model.RatingSummary.ReviewCount == 1 ? "" : "s")</div>
+            </div>
+        </div>
+
+        @if (Model.RatingSummary.ReviewCount > 0)
+        {
+            <div class="mb-4" style="max-width:300px">
+                @foreach (var star in new[] { 5, 4, 3, 2, 1 })
+                {
+                    var count = Model.RatingSummary.RatingBreakdown[star];
+                    var pct = 100 * count / Model.RatingSummary.ReviewCount;
+                    <div class="d-flex align-items-center gap-2 small mb-1">
+                        <span style="width:45px">@star star</span>
+                        <div class="progress flex-grow-1" style="height:8px">
+                            <div class="progress-bar bg-warning" style="width:@(pct)%"></div>
+                        </div>
+                        <span class="text-muted" style="width:25px">@count</span>
+                    </div>
+                }
+            </div>
+        }
+
+        @if (User.Identity?.IsAuthenticated == true)
+        {
+            @if (!Model.HasReviewed)
+            {
+                <form method="post" asp-action="SubmitReview" asp-route-slug="@Model.Slug" class="border rounded p-3 mb-4">
+                    <input type="hidden" name="ProductId" value="@Model.Id" />
+                    <h6>Write a review</h6>
+                    <div class="mb-2">
+                        <label class="form-label small fw-semibold d-block">Rating</label>
+                        @foreach (var star in new[] { 1, 2, 3, 4, 5 })
+                        {
+                            <div class="form-check form-check-inline">
+                                <input class="form-check-input" type="radio" name="Rating" id="rating@(star)" value="@star" required />
+                                <label class="form-check-label" for="rating@(star)">@star</label>
+                            </div>
+                        }
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-label small fw-semibold" for="reviewTitle">Title (optional)</label>
+                        <input type="text" class="form-control form-control-sm" id="reviewTitle" name="Title" maxlength="150" />
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-label small fw-semibold" for="reviewBody">Review</label>
+                        <textarea class="form-control form-control-sm" id="reviewBody" name="Body" rows="3" maxlength="2000" required></textarea>
+                    </div>
+                    <button type="submit" class="btn btn-sm btn-primary">Submit review</button>
+                </form>
+            }
+            else
+            {
+                <p class="text-muted">You've already reviewed this product.</p>
+            }
+        }
+        else
+        {
+            <p class="text-muted"><a href="/Account/Login?returnUrl=@Uri.EscapeDataString($"/Product/{Model.Slug}")">Log in</a> to write a review.</p>
+        }
+
+        @if (Model.Reviews.Items.Count > 0)
+        {
+            foreach (var review in Model.Reviews.Items)
+            {
+                <div class="border-bottom pb-2 mb-3">
+                    <div class="d-flex justify-content-between">
+                        <strong>@review.ReviewerDisplayName</strong>
+                        <span class="text-muted small">@review.CreatedAtUtc.ToString("MMM d, yyyy")</span>
+                    </div>
+                    <div class="text-warning">@Stars(review.Rating)</div>
+                    @if (review.IsVerifiedPurchase)
+                    {
+                        <span class="badge text-bg-success">Verified Purchase</span>
+                    }
+                    @if (!string.IsNullOrEmpty(review.Title))
+                    {
+                        <div class="fw-semibold mt-1">@review.Title</div>
+                    }
+                    <p class="mb-0">@review.Body</p>
+                </div>
+            }
+
+            @if (Model.Reviews.TotalPages > 1)
+            {
+                <nav>
+                    <ul class="pagination pagination-sm">
+                        @for (var p = 1; p <= Model.Reviews.TotalPages; p++)
+                        {
+                            <li class="page-item @(p == Model.Reviews.Page ? "active" : "")">
+                                <a class="page-link" href="?reviewsPage=@p#tab-reviews">@p</a>
+                            </li>
+                        }
+                    </ul>
+                </nav>
+            }
+        }
+        else
+        {
+            <p class="text-muted">No reviews yet. Be the first to review this product.</p>
+        }
     </div>
 </div>
+
+@functions {
+    string Stars(double rating)
+    {
+        var rounded = (int)Math.Round(rating);
+        return new string('★', rounded) + new string('☆', 5 - rounded);
+    }
+}
 
 <h2 class="h5">Related Products</h2>
 @if (Model.RelatedProducts.Count > 0)
@@ -381,6 +501,19 @@ else
                     resolveVariant();
                 });
             });
+        }());
+
+        // Reviews (Milestone 12.1) - after a review submission redirects back
+        // here, or a review-list pagination link is followed, land back on
+        // the Reviews tab instead of the default Description tab.
+        (function () {
+            var hasReviewMessage = @Html.Raw(JsonSerializer.Serialize(TempData["ReviewMessage"] != null || TempData["ReviewError"] != null));
+            if (window.location.hash === '#tab-reviews' || hasReviewMessage) {
+                var reviewsTabButton = document.querySelector('[data-bs-target="#tab-reviews"]');
+                if (reviewsTabButton && window.bootstrap) {
+                    new bootstrap.Tab(reviewsTabButton).show();
+                }
+            }
         }());
     </script>
 }
