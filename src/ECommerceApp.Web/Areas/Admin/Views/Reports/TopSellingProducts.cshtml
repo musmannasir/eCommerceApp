@@ -1,0 +1,49 @@
+@using ECommerceApp.Application.Reporting.Models
+@model TopSellingProductsResultDto
+@{
+    ViewData["Title"] = "Top Selling Products";
+}
+
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h1 class="h3 mb-0">Top Selling Products</h1>
+</div>
+
+<form method="get" class="row g-2 mb-4 align-items-end">
+    <div class="col-auto">
+        <label class="form-label small" for="from">From</label>
+        <input type="date" id="from" name="from" class="form-control" value="@Model.From.ToString("yyyy-MM-dd")" />
+    </div>
+    <div class="col-auto">
+        <label class="form-label small" for="to">To</label>
+        <input type="date" id="to" name="to" class="form-control" value="@Model.To.ToString("yyyy-MM-dd")" />
+    </div>
+    <div class="col-auto">
+        <button type="submit" class="btn btn-outline-primary">Filter</button>
+    </div>
+    <div class="col-auto">
+        <a class="btn btn-outline-secondary" asp-action="TopSellingProductsExportCsv" asp-route-from="@Model.From.ToString("yyyy-MM-dd")" asp-route-to="@Model.To.ToString("yyyy-MM-dd")">Export CSV</a>
+    </div>
+</form>
+
+@if (Model.Products.Count == 0)
+{
+    <p class="text-muted">No successfully paid orders in this range.</p>
+}
+else
+{
+    <table class="table table-sm align-middle">
+        <thead>
+            <tr><th>Product</th><th class="text-end">Quantity sold</th><th class="text-end">Revenue</th></tr>
+        </thead>
+        <tbody>
+            @foreach (var product in Model.Products)
+            {
+                <tr>
+                    <td>@product.ProductName</td>
+                    <td class="text-end">@product.QuantitySold</td>
+                    <td class="text-end">@product.Revenue.ToString("0.00")</td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}

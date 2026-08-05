@@ -31,5 +31,14 @@ public interface IInventoryService
     /// </summary>
     Task<Result> ConsumeReservationAsync(int reservationId, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// The mirror image of <see cref="ConsumeReservationAsync"/> - adds a
+    /// physically-returned item's quantity back to on-hand and records a
+    /// CustomerReturn movement (Milestone 13.3). There is no reservation to
+    /// touch here (the sale already completed at ship time), so this simply
+    /// increases QuantityOnHand.
+    /// </summary>
+    Task<Result<InventoryItemDto>> RestockReturnedItemAsync(int inventoryItemId, int quantity, int returnRequestId, CancellationToken cancellationToken = default);
+
     Task<Result<PagedResult<StockMovementDto>>> GetMovementHistoryAsync(int inventoryItemId, PagedQuery query, CancellationToken cancellationToken = default);
 }

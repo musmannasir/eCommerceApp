@@ -110,6 +110,7 @@
             {
                 ReturnRequestStatus.Approved => "text-bg-success",
                 ReturnRequestStatus.Rejected => "text-bg-danger",
+                ReturnRequestStatus.Refunded => "text-bg-primary",
                 _ => "text-bg-secondary",
             };
             <div class="card mb-3">
@@ -124,6 +125,10 @@
                     @if (latestReturnRequest.Status == ReturnRequestStatus.Rejected && !string.IsNullOrEmpty(latestReturnRequest.RejectionReason))
                     {
                         <div class="small text-danger">Reason: @latestReturnRequest.RejectionReason</div>
+                    }
+                    @if (latestReturnRequest.Status == ReturnRequestStatus.Refunded && latestReturnRequest.RefundedAmount is not null)
+                    {
+                        <div class="small text-success">Refunded @latestReturnRequest.RefundedAmount.Value.ToString("0.00") on @latestReturnRequest.RefundedAtUtc?.ToString("f") UTC</div>
                     }
                 </div>
             </div>

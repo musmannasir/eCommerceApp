@@ -106,12 +106,15 @@ public class ReturnFlowTests
         queueHtml.Should().Contain(orderNumber).And.Contain("Arrived broken");
 
         var approveToken = HtmlHelpers.ExtractAntiForgeryToken(queueHtml);
-        var returnRequestId = int.Parse(Regex.Match(queueHtml, "/Admin/Returns/Approve/(\\d+)").Groups[1].Value);
+        var returnRequestId = ExtractRequestId(queueHtml, orderNumber, "Approve");
         var approveResponse = await adminClient.PostAsync("/Admin/Returns/Approve", new FormUrlEncodedContent(
             new Dictionary<string, string> { ["id"] = returnRequestId.ToString(), ["__RequestVerificationToken"] = approveToken }));
         var afterApproveHtml = await approveResponse.Content.ReadAsStringAsync();
 
-        afterApproveHtml.Should().Contain("Return request approved.").And.NotContain(orderNumber);
+        // Approving moves the request out of "Pending decision" into
+        // "Awaiting receipt" (Milestone 13.3) rather than off the page
+        // entirely - it's still visible, just under the other section.
+        afterApproveHtml.Should().Contain("Return request approved.").And.Contain("Awaiting receipt").And.Contain(orderNumber);
 
         var customerDetailsHtml = await customerClient.GetStringAsync($"/Orders/{orderNumber}");
         customerDetailsHtml.Should().Contain("Approved");
@@ -139,7 +142,7 @@ public class ReturnFlowTests
 
         var queueHtml = await adminClient.GetStringAsync("/Admin/Returns/Index");
         var rejectToken = HtmlHelpers.ExtractAntiForgeryToken(queueHtml);
-        var returnRequestId = int.Parse(Regex.Match(queueHtml, "/Admin/Returns/Reject/(\\d+)").Groups[1].Value);
+        var returnRequestId = ExtractRequestId(queueHtml, orderNumber, "Reject");
         await adminClient.PostAsync("/Admin/Returns/Reject", new FormUrlEncodedContent(
             new Dictionary<string, string>
             {
@@ -179,6 +182,67 @@ public class ReturnFlowTests
     }
 
     [Fact]
+    public async Task Marking_an_approved_return_received_refunds_and_restocks_inventory()
+    {
+        var product = await SeedProductAsync();
+        await SeedShippingMethodAsync("US", "PA", baseRate: 5m, ratePerKg: 0m);
+        var inventoryItemId = await SeedInventoryAsync(product.Id, onHand: 10);
+
+        var customerClient = _fixture.Factory.CreateClient();
+        var email = $"refunded.{Guid.NewGuid():N}@example.com";
+        await customerClient.RegisterViaFormAsync(email, "Str0ng!Passw0rd", "Refunded", "Customer");
+        var orderNumber = await PlaceAnOrderAsync(customerClient, product.Id, "US", "PA");
+
+        await DeliverOrderAsync(orderNumber);
+
+        using (var scope = _fixture.Factory.Services.CreateScope())
+        {
+            var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            var onHandAfterShip = (await dbContext.InventoryItems.FirstAsync(i => i.Id == inventoryItemId)).QuantityOnHand;
+            onHandAfterShip.Should().Be(9);
+        }
+
+        await SubmitReturnRequestAsync(customerClient, orderNumber, "Changed my mind", "NoLongerNeeded");
+
+        // OrderManager, not CustomerSupport - Refund is gated by the
+        // narrower CanProcessRefunds policy (Milestone 14.1), which
+        // CustomerSupport doesn't satisfy.
+        var adminClient = _fixture.Factory.CreateClient();
+        var adminEmail = $"admin.refund.{Guid.NewGuid():N}@example.com";
+        await _fixture.Factory.CreateUserInRoleAsync(adminEmail, "Str0ng!Passw0rd", "OrderManager");
+        await adminClient.LoginViaFormAsync(adminEmail, "Str0ng!Passw0rd");
+
+        var queueHtml = await adminClient.GetStringAsync("/Admin/Returns/Index");
+        var approveToken = HtmlHelpers.ExtractAntiForgeryToken(queueHtml);
+        var returnRequestId = ExtractRequestId(queueHtml, orderNumber, "Approve");
+        await adminClient.PostAsync("/Admin/Returns/Approve", new FormUrlEncodedContent(
+            new Dictionary<string, string> { ["id"] = returnRequestId.ToString(), ["__RequestVerificationToken"] = approveToken }));
+
+        var afterApproveQueueHtml = await adminClient.GetStringAsync("/Admin/Returns/Index");
+        afterApproveQueueHtml.Should().Contain("Awaiting receipt").And.Contain(orderNumber).And.Contain("Mark received");
+
+        var refundToken = HtmlHelpers.ExtractAntiForgeryToken(afterApproveQueueHtml);
+        var refundResponse = await adminClient.PostAsync("/Admin/Returns/Refund", new FormUrlEncodedContent(
+            new Dictionary<string, string> { ["id"] = returnRequestId.ToString(), ["__RequestVerificationToken"] = refundToken }));
+        var afterRefundHtml = await refundResponse.Content.ReadAsStringAsync();
+
+        afterRefundHtml.Should().Contain("Item received - refund issued and stock restocked.").And.NotContain(orderNumber);
+
+        var customerDetailsHtml = await customerClient.GetStringAsync($"/Orders/{orderNumber}");
+        customerDetailsHtml.Should().Contain("Refunded").And.Contain("100.00");
+
+        using (var scope = _fixture.Factory.Services.CreateScope())
+        {
+            var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            var refund = await dbContext.Refunds.SingleAsync(r => r.ReturnRequestId == returnRequestId);
+            refund.Amount.Should().Be(100m);
+
+            var restockedItem = await dbContext.InventoryItems.FirstAsync(i => i.Id == inventoryItemId);
+            restockedItem.QuantityOnHand.Should().Be(10);
+        }
+    }
+
+    [Fact]
     public async Task Requesting_a_return_for_a_non_delivered_order_shows_a_validation_error()
     {
         var product = await SeedProductAsync();
@@ -212,6 +276,15 @@ public class ReturnFlowTests
             }));
         return await response.Content.ReadAsStringAsync();
     }
+
+    /// <summary>
+    /// Scoped to the given order's own card rather than matching the first
+    /// action link on the page - the admin queue accumulates leftover
+    /// requests from earlier tests in this shared, only-reset-once-per-collection
+    /// database, so a plain first-match regex would grab the wrong request.
+    /// </summary>
+    private static int ExtractRequestId(string html, string orderNumber, string action) =>
+        int.Parse(Regex.Match(html, $@"{Regex.Escape(orderNumber)}[\s\S]*?/Admin/Returns/{action}/(\d+)").Groups[1].Value);
 
     private async Task DeliverOrderAsync(string orderNumber)
     {
@@ -368,7 +441,7 @@ public class ReturnFlowTests
         await dbContext.SaveChangesAsync();
     }
 
-    private async Task SeedInventoryAsync(int productId, int onHand)
+    private async Task<int> SeedInventoryAsync(int productId, int onHand)
     {
         using var scope = _fixture.Factory.Services.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
@@ -377,7 +450,7 @@ public class ReturnFlowTests
         dbContext.Warehouses.Add(warehouse);
         await dbContext.SaveChangesAsync();
 
-        dbContext.InventoryItems.Add(new Domain.Inventory.InventoryItem
+        var item = new Domain.Inventory.InventoryItem
         {
             WarehouseId = warehouse.Id,
             ProductId = productId,
@@ -385,7 +458,10 @@ public class ReturnFlowTests
             QuantityReserved = 0,
             AllowBackorder = false,
             LastStockUpdateUtc = DateTime.UtcNow,
-        });
+        };
+        dbContext.InventoryItems.Add(item);
         await dbContext.SaveChangesAsync();
+
+        return item.Id;
     }
 }

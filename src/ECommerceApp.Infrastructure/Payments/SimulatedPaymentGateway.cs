@@ -57,6 +57,16 @@ public sealed class SimulatedPaymentGateway : IPaymentGateway
         return Task.FromResult(new ChargeResult(true, Mask(digitsOnly), DetectBrand(digitsOnly), null));
     }
 
+    /// <summary>
+    /// Unlike ChargeAsync, there is no realistic decline scenario for
+    /// reversing a charge that already succeeded, and no card-number-based
+    /// test fixtures exist for refunds - a real processor could still reject
+    /// one (e.g. funds already withdrawn), but simulating that has no
+    /// meaningful test case to drive it, so this always succeeds.
+    /// </summary>
+    public Task<RefundResult> RefundAsync(RefundRequest request, CancellationToken cancellationToken = default) =>
+        Task.FromResult(new RefundResult(true, null));
+
     private static ChargeResult Decline(string digitsOnly, string reason) =>
         new(false, Mask(digitsOnly), DetectBrand(digitsOnly), reason);
 

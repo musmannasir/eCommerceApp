@@ -1,0 +1,37 @@
+@{
+    ViewData["Title"] = "Reports";
+}
+
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h1 class="h3 mb-0">Reports</h1>
+</div>
+
+<div class="row g-3">
+    <div class="col-sm-6 col-lg-4">
+        <div class="card">
+            <div class="card-body">
+                <h2 class="h6">Ledger</h2>
+                <p class="text-muted small">Every successful charge and refund, chronologically.</p>
+                <a asp-controller="Ledger" asp-action="Index" class="btn btn-outline-primary btn-sm">View</a>
+            </div>
+        </div>
+    </div>
+    <div class="col-sm-6 col-lg-4">
+        <div class="card">
+            <div class="card-body">
+                <h2 class="h6">Cash Flow</h2>
+                <p class="text-muted small">Day-by-day revenue, refunds, and net across a date range.</p>
+                <a asp-controller="Ledger" asp-action="CashFlow" class="btn btn-outline-primary btn-sm">View</a>
+            </div>
+        </div>
+    </div>
+    <div class="col-sm-6 col-lg-4">
+        <div class="card">
+            <div class="card-body">
+                <h2 class="h6">Top Selling Products</h2>
+                <p class="text-muted small">Quantity and revenue sold per product across a date range.</p>
+                <a asp-action="TopSellingProducts" class="btn btn-outline-primary btn-sm">View</a>
+            </div>
+        </div>
+    </div>
+</div>

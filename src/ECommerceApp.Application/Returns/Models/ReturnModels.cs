@@ -17,6 +17,8 @@ public record ReturnRequestDto(
     ReturnRequestStatus Status,
     DateTime RequestedAtUtc,
     string? RejectionReason,
+    decimal? RefundedAmount,
+    DateTime? RefundedAtUtc,
     IReadOnlyList<ReturnRequestItemDto> Items);
 
 /// <summary>The admin return queue's row shape - deliberately lighter than ReturnRequestDto, the same relationship OrderListItemDto has to the full order.</summary>

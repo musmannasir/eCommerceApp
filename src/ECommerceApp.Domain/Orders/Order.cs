@@ -45,7 +45,9 @@ namespace ECommerceApp.Domain.Orders;
 /// available before a real fulfillment state machine exists (Milestone
 /// 10.3): cancelling a <see cref="OrderStatus.Paid"/> order, which releases
 /// its reservations and moves it to <see cref="OrderStatus.Cancelled"/>
-/// without processing a refund (a separate transaction, Milestone 13.3).
+/// without processing a refund - a cancelled order was never delivered, so
+/// there is nothing to return; a refund only follows an approved, received
+/// return (Milestone 13.3).
 /// Milestone 10.3 adds <see cref="Shipment"/> - shipping a
 /// <see cref="OrderStatus.Paid"/> order consumes its stock reservation for
 /// good (rather than merely releasing it) and moves it to

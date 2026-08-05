@@ -143,6 +143,32 @@ public class InventoryServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task Restocking_a_returned_item_increases_on_hand_and_records_a_customer_return_movement()
+    {
+        var itemId = await SeedInventoryItemAsync(quantity: 20, reorderLevel: 5);
+        var reservation = await _harness.InventoryService.ReserveStockAsync(new ReserveStockRequest(itemId, 8, "Order", "order-123"));
+        await _harness.InventoryService.ConsumeReservationAsync(reservation.Value.Id);
+
+        var result = await _harness.InventoryService.RestockReturnedItemAsync(itemId, 3, returnRequestId: 42);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.QuantityOnHand.Should().Be(15);
+
+        var movements = await _harness.InventoryService.GetMovementHistoryAsync(itemId, new() { PageSize = 10 });
+        movements.Value.Items.Should().Contain(m =>
+            m.MovementType == nameof(StockMovementType.CustomerReturn) && m.QuantityChange == 3 && m.ReferenceId == 42);
+    }
+
+    [Fact]
+    public async Task Restocking_an_unknown_inventory_item_is_rejected()
+    {
+        var result = await _harness.InventoryService.RestockReturnedItemAsync(999999, 1, returnRequestId: 1);
+
+        result.IsFailure.Should().BeTrue();
+        result.FirstError.Type.Should().Be(ErrorType.NotFound);
+    }
+
+    [Fact]
     public async Task Reserving_more_than_available_without_backorder_is_rejected()
     {
         var itemId = await SeedInventoryItemAsync(quantity: 5, reorderLevel: 1, allowBackorder: false);
