@@ -2121,6 +2121,228 @@ as the customer (saw it show as "Requested" on the Details page), approved
 it from the admin queue (the queue emptied and the customer's Details page
 updated to "Approved").
 
+## Refunds & restocking (Milestone 13.3)
+
+**Same brief-text gap as Milestones 6.1-13.2** - scope was agreed with the
+user as a concrete reading of the milestone name. This is the piece
+Milestone 13.2 deliberately deferred: once an approved return's item(s) are
+physically received back, process the refund and put the stock back.
+
+**A refund is a new `Refund` entity, not an edit to the original `Payment`
+row.** `Order.Payment` is a single reference, not a collection, and
+`Payment`'s own doc comment already anticipated this: a correction "records
+a new, separate transaction rather than editing this one." `Refund`
+(`Domain.Payments`, `BaseEntity`) is an immutable ledger row, the same
+reasoning `Payment`/`StockMovement` already use, with a unique index on
+`ReturnRequestId` as defense in depth (the real guard is the status check -
+only an `Approved` request can be refunded, so a second attempt is already
+rejected before a duplicate row could ever be created).
+
+**One admin action - "Mark received & refund" - does both the refund and
+the restock**, moving `ReturnRequestStatus.Approved` straight to the new
+terminal `Refunded` state, rather than modeling a separate "received" state
+in between. This mirrors the same minimal-states preference the rest of
+this app's workflows use (e.g. `ReturnRequestStatus` itself only has as many
+values as there are real decision points).
+
+**The refund amount is the returned items' line total only** - quantity
+times each `OrderItem.UnitPrice` - not a proportional share of the order's
+tax or shipping. Allocating tax/shipping proportionally across a partial
+return would add real complexity for a milestone whose own scope is
+"reasonable conventions," so it was deliberately left out.
+
+**Restocking targets the exact warehouse the item was originally reserved
+from**, not just any warehouse with the same product. `OrderService`'s
+checkout flow already records one `InventoryReservation` per order line
+(Milestone 9.3), and that reservation still carries its `InventoryItemId`
+even after being consumed at ship time (Milestone 10.3) - `ReturnService`
+looks it up by matching the returned `OrderItem`'s product/variant against
+the order's own reservations, then restocks that exact `InventoryItem`. A
+product that was untracked at order time (no matching reservation) has
+nothing to restock, the same leniency untracked inventory already gets
+everywhere else in this app.
+
+**New abstraction members, both following existing shapes closely:**
+`IPaymentGateway.RefundAsync` (new `RefundRequest`/`RefundResult` models) -
+implemented by `SimulatedPaymentGateway` to always succeed, since there is
+no realistic decline scenario for reversing a charge that already
+succeeded, unlike `ChargeAsync`'s Stripe-test-card decline path; and
+`IInventoryService.RestockReturnedItemAsync`, the mirror image of
+`ConsumeReservationAsync` - adds the quantity back to `QuantityOnHand`
+(there's no reservation to touch, since the sale already completed) and
+records a `CustomerReturn` `StockMovement`.
+
+**The admin Returns page gained a second, independently paginated section**
+- "Awaiting receipt" (`GetAwaitingReceiptQueueAsync`, `Approved` requests)
+alongside the existing "Pending decision" section (`GetPendingQueueAsync`,
+`Requested` requests) - both now implemented via one shared
+`GetQueueByStatusAsync(status, ...)` helper rather than duplicated query
+logic. The customer order Details page's return-status card now renders a
+"Refunded" badge with the amount and date once one exists.
+
+**Manually verified** against the real dev database: approved a return left
+over from Milestone 13.2's own manual verification, marked it received from
+the "Awaiting receipt" queue, and confirmed via a direct SQL query that the
+`Refund` row (correct amount), the `ReturnRequestStatus.Refunded`
+transition, and the exact original warehouse's restocked `QuantityOnHand`
+were all correct - and that the customer's Details page reflected the
+refund. This closes out Milestone 13 in full.
+
+## Ledger & dashboard (Milestone 14.1)
+
+**Same brief-text gap as Milestones 6.1-13.3** - scope was agreed with the
+user as a concrete reading of the milestone name.
+
+**No new "Ledger" entity.** `Payment` and `Refund` are already the
+immutable ledger rows for money in/out - both their own doc comments
+describe them as exactly that - so a separate financial-ledger table would
+just duplicate them. `IFinanceService` composes the two instead, the same
+way the existing Inventory "History" view composes `StockMovement` rows
+rather than storing a separate summary table.
+
+**`GetLedgerAsync` merges client-side, not via a SQL `UNION`.** Both
+`Payment` (filtered to `Succeeded`) and `Refund` are projected into the
+same `LedgerEntryDto` shape, materialized separately, then concatenated,
+sorted, and paged in memory. This keeps behavior identical between the
+InMemory (unit test) and SQL Server (real/integration) providers without
+relying on `IQueryable.Concat` translating the same way on both - a
+reasonable simplicity/correctness tradeoff for this app's data volume.
+`LedgerEntryDto.Amount` is signed the way `StockMovement.QuantityChange`
+already is - a charge is positive, a refund is negative - so a reader can
+eyeball a running total without branching on `Type` first.
+
+**The dashboard summary is all-time totals only** - `TotalRevenue`,
+`TotalRefunded`, `NetRevenue`, `PaidOrderCount`, `RefundCount`,
+`AverageOrderValue`. Date-ranged/time-series breakdowns are explicitly
+Milestone 14.2's ("Cash flow") job and were deliberately left out here, the
+same kind of scope boundary Milestone 13.2 drew around refunds before
+Milestone 13.3 existed to own that concern.
+
+**A pre-existing authorization gap, found and fixed while researching this
+milestone.** `Policies.CanViewFinancialReports` (SuperAdmin/Admin) and
+`Policies.CanProcessRefunds` (SuperAdmin/Admin/OrderManager) were both
+already registered in `Program.cs` since Milestone 1, clearly planted for
+this exact milestone, but neither had ever actually been referenced by an
+`[Authorize]` attribute anywhere in the app - `ReturnsController.Refund`
+(Milestone 13.3) used the broader class-level `CanManageOrders` policy
+instead, which also grants CustomerSupport. Fixed here: `Refund` now also
+carries `[Authorize(Policy = Policies.CanProcessRefunds)]` - stacked
+`[Authorize]` attributes at class and method level combine with AND
+semantics, so this narrows rather than replaces the class-level policy,
+and `Approve`/`Reject` (customer-facing triage decisions, not money
+movement) stay under `CanManageOrders` so CustomerSupport keeps that
+ability.
+
+**The admin dashboard itself stays open to every staff role** (unchanged
+`[Authorize(Roles = Roles.StaffRolesCsv)]`), so it keeps working as the
+front door to the whole admin area - only the financial summary cards it
+now renders are gated behind `CanViewFinancialReports`, checked in
+`HomeController` via `IAuthorizationService` rather than in the view, so a
+role that fails the check never even triggers the aggregate queries. The
+new `/Admin/Ledger` page (`LedgerController`), by contrast, is gated at
+the class level - a detailed transaction listing is more sensitive than
+the aggregate totals the dashboard shows.
+
+**Manually verified** against the real dev database: the dashboard's
+totals and the ledger's per-row entries both matched a direct SQL query
+against `Payments`/`Refunds` exactly.
+
+## Cash flow (Milestone 14.2)
+
+**Same brief-text gap as Milestones 6.1-14.1** - scope was agreed with the
+user as a concrete reading of the milestone name, this time after
+explicitly researching the codebase first rather than assuming.
+
+**No charting library was introduced.** The Web project has no chart/graph
+NuGet package and no bundled JS charting library - Bootstrap is the only
+front-end dependency anywhere in the app. Rather than add a new dependency
+with zero existing precedent for a single milestone, Cash Flow stays
+server-rendered like every other admin screen: a date-range-filterable
+table of daily Revenue/Refunded/Net rows, with lightweight CSS-only
+(`width: N%` div bars, no JS) bars for an at-a-glance read. Milestone
+14.3's own name ("Reports & export") is a more natural home for richer
+visualization or export if that's ever wanted.
+
+**`GetCashFlowAsync` fills every day in the range, including zero-activity
+ones.** `Payment` (Succeeded only) and `Refund` rows in `[From, To]` are
+materialized and grouped by date into two dictionaries, then a day-by-day
+loop from `From` to `To` looks each day up via `GetValueOrDefault` -
+so gap days render as an explicit `0.00` row rather than being silently
+skipped, giving a continuous timeline rather than a sparse one.
+
+**Defaults to the 30 days ending today** when the query omits `From`/`To`,
+computed from the newly-added `IClock` dependency on `FinanceService`
+(previously it only needed `ApplicationDbContext`). A reversed range
+(`From` after `To`) is silently swapped rather than rejected - there's no
+real "invalid state" here worth surfacing as an error for an internal
+admin filter form.
+
+**Daily granularity only** - no weekly/monthly toggle. Nothing in the
+codebase (doc comments, existing query patterns) hinted at needing
+one, and building configurable granularity speculatively would have gone
+beyond "reasonable conventions" scope.
+
+**Gated the same way as the Ledger page** - `CanViewFinancialReports`,
+inherited from `LedgerController`'s class-level `[Authorize]` since
+`CashFlow` is just a second action on that controller (cash flow and the
+raw ledger are the same "finance reporting" concern, just aggregated
+differently, so they share a controller rather than being split into
+`LedgerController` and a new single-purpose `CashFlowController`).
+
+**Manually verified** against the real dev database: both the default
+30-day view and a narrower explicit date range matched a direct SQL
+`GROUP BY` query exactly, including gap days rendering as zero.
+
+## Reports & export (Milestone 14.3)
+
+**Same brief-text gap as Milestones 6.1-14.2** - scope was agreed with the
+user as a concrete reading of the milestone name, researched first the same
+way Milestone 14.2 was.
+
+**The "Reports" nav placeholder finally goes live.** It has sat disabled in
+the Accounting section of `_AdminLayout.cshtml` since Milestone 1. It's now
+a real `/Admin/Reports` hub (`ReportsController.Index`) linking to Ledger,
+Cash Flow, and the new Top Selling Products report - a small landing page,
+not a new independent concern.
+
+**`IReportingService` is a new, separate service from `IFinanceService`.**
+`IFinanceService`'s own doc comments scope it specifically to composing
+`Payment`/`Refund` - money in/out. A product-sales report isn't that kind
+of concern, so rather than blur that boundary it gets its own interface
+and implementation, following the same one-service-per-capability pattern
+`IReturnService`/`IOrderService`/`IInventoryService` already use despite
+overlapping domains.
+
+**Top Selling Products fills a gap flagged three separate times elsewhere
+in this codebase** - `CatalogBrowseModels.cs`, `IRecommendationService.cs`,
+and `RecommendationService.cs` all explicitly note that a "best selling"
+sort/signal was deliberately left out because "there is no order/sales
+history yet to sort by." That history has existed since Milestone 9;
+`GetTopSellingProductsAsync` is the first thing in this app to actually use
+it, grouping `OrderItem` rows by `ProductId` (not `ProductName` - a
+renamed product doesn't fragment into two rows, and the group takes its
+name from the latest recorded line) for orders whose payment succeeded,
+within a date range defaulting to the 30 days ending today - the same
+default-range convention `GetCashFlowAsync` established in Milestone 14.2.
+Materialized then grouped in-memory, the same provider-agnostic approach
+`GetLedgerAsync`/`GetCashFlowAsync` already use.
+
+**No CSV/export library was introduced**, matching the "no charting
+library" call already made in Milestone 14.2 - nothing in this app
+referenced one, and a hand-rolled writer (`ECommerceApp.Web.Common.CsvExport`)
+that correctly quotes/escapes commas, quotes, and newlines covers every
+export here, since the exported data is always simple flat rows. It backs
+three new export endpoints: `LedgerController.ExportCsv` (the *entire*
+ledger, unpaginated - a new `IFinanceService.GetAllLedgerEntriesAsync`
+shares the same merge logic `GetLedgerAsync` already had, extracted into
+a private `BuildLedgerFeedAsync` helper), `LedgerController.CashFlowExportCsv`,
+and `ReportsController.TopSellingProductsExportCsv` - the latter two export
+whatever date range is currently being viewed.
+
+**Manually verified** against the real dev database: the Reports hub, the
+Top Selling Products report, and all three CSV exports all matched a
+direct SQL `GROUP BY` query exactly. This closes out Milestone 14 in full.
+
 ## Framework version note
 
 The brief fixes the stack at **.NET 8**. This machine has only the **.NET 10**

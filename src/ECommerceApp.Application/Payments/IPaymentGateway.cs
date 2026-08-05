@@ -12,4 +12,7 @@ namespace ECommerceApp.Application.Payments;
 public interface IPaymentGateway
 {
     Task<ChargeResult> ChargeAsync(ChargeRequest request, CancellationToken cancellationToken = default);
+
+    /// <summary>Reverses part or all of an earlier successful charge (Milestone 13.3, once a returned item is received back).</summary>
+    Task<RefundResult> RefundAsync(RefundRequest request, CancellationToken cancellationToken = default);
 }

@@ -404,6 +404,33 @@ public sealed class InventoryService : IInventoryService
         return Result.Success();
     }
 
+    public async Task<Result<InventoryItemDto>> RestockReturnedItemAsync(int inventoryItemId, int quantity, int returnRequestId, CancellationToken cancellationToken = default)
+    {
+        var item = await _dbContext.InventoryItems.FirstOrDefaultAsync(i => i.Id == inventoryItemId, cancellationToken);
+        if (item is null)
+        {
+            return Result.Failure<InventoryItemDto>(Error.NotFound("inventory.item_not_found", "Inventory item not found."));
+        }
+
+        var utcNow = _clock.UtcNow;
+        item.QuantityOnHand += quantity;
+        item.LastStockUpdateUtc = utcNow;
+        item.StockStatus = ComputeStockStatus(item);
+
+        await using var transaction = await BeginTransactionIfSupportedAsync(cancellationToken);
+
+        await _dbContext.SaveChangesAsync(cancellationToken);
+        AddMovement(item, StockMovementType.CustomerReturn, quantity, "Customer return", "ReturnRequest", returnRequestId, utcNow);
+        await _dbContext.SaveChangesAsync(cancellationToken);
+
+        if (transaction is not null)
+        {
+            await transaction.CommitAsync(cancellationToken);
+        }
+
+        return Result.Success(await MapToDtoAsync(item.Id, cancellationToken));
+    }
+
     public async Task<Result<PagedResult<StockMovementDto>>> GetMovementHistoryAsync(int inventoryItemId, PagedQuery query, CancellationToken cancellationToken = default)
     {
         if (!await _dbContext.InventoryItems.AnyAsync(i => i.Id == inventoryItemId, cancellationToken))

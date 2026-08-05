@@ -83,6 +83,7 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser, IdentityR
     public DbSet<ReturnRequest> ReturnRequests => Set<ReturnRequest>();
     public DbSet<ReturnRequestItem> ReturnRequestItems => Set<ReturnRequestItem>();
     public DbSet<Payment> Payments => Set<Payment>();
+    public DbSet<Refund> Refunds => Set<Refund>();
     public DbSet<Shipment> Shipments => Set<Shipment>();
     public DbSet<Review> Reviews => Set<Review>();
     public DbSet<ReviewReport> ReviewReports => Set<ReviewReport>();

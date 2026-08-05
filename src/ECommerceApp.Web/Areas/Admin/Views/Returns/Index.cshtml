@@ -1,6 +1,6 @@
-@using ECommerceApp.Application.Common.Models
 @using ECommerceApp.Application.Returns.Models
-@model PagedResult<ReturnRequestQueueItemDto>
+@using ECommerceApp.Web.Models.Returns
+@model ReturnsQueueViewModel
 @{
     ViewData["Title"] = "Return Requests";
 }
@@ -18,13 +18,14 @@
     <div class="alert alert-danger">@error</div>
 }
 
-@if (Model.Items.Count == 0)
+<h2 class="h5">Pending decision</h2>
+@if (Model.Pending.Items.Count == 0)
 {
     <p class="text-muted">No pending return requests - the queue is empty.</p>
 }
 else
 {
-    @foreach (var item in Model.Items)
+    @foreach (var item in Model.Pending.Items)
     {
         <div class="card mb-3">
             <div class="card-body">
@@ -70,14 +71,77 @@ else
         </div>
     }
 
-    @if (Model.TotalPages > 1)
+    @if (Model.Pending.TotalPages > 1)
     {
         <nav>
             <ul class="pagination">
-                @for (var i = 1; i <= Model.TotalPages; i++)
+                @for (var i = 1; i <= Model.Pending.TotalPages; i++)
                 {
-                    <li class="page-item @(i == Model.Page ? "active" : "")">
-                        <a class="page-link" asp-action="Index" asp-route-page="@i">@i</a>
+                    <li class="page-item @(i == Model.Pending.Page ? "active" : "")">
+                        <a class="page-link" asp-action="Index" asp-route-page="@i" asp-route-receivedPage="@Model.AwaitingReceipt.Page">@i</a>
+                    </li>
+                }
+            </ul>
+        </nav>
+    }
+}
+
+<h2 class="h5 mt-4">Awaiting receipt</h2>
+@if (Model.AwaitingReceipt.Items.Count == 0)
+{
+    <p class="text-muted">No approved returns are waiting to be received.</p>
+}
+else
+{
+    @foreach (var item in Model.AwaitingReceipt.Items)
+    {
+        <div class="card mb-3">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-start mb-2">
+                    <div>
+                        <strong>@item.OrderNumber</strong>
+                        <div class="small text-muted">@item.CustomerName &middot; @item.RequestedAtUtc.ToString("yyyy-MM-dd HH:mm")</div>
+                    </div>
+                    <span class="badge text-bg-secondary">@item.Reason</span>
+                </div>
+
+                @if (!string.IsNullOrEmpty(item.Comment))
+                {
+                    <p class="small">@item.Comment</p>
+                }
+
+                <h6 class="small text-uppercase text-muted">Items</h6>
+                <table class="table table-sm">
+                    <thead>
+                        <tr><th>Product</th><th>Quantity</th></tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var line in item.Items)
+                        {
+                            <tr>
+                                <td>@line.ProductName</td>
+                                <td>@line.Quantity</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+
+                <form method="post" asp-action="Refund" asp-route-id="@item.Id"
+                      onsubmit="return confirm('Confirm the item(s) were physically received back? This issues the refund and restocks inventory immediately.');">
+                    <button type="submit" class="btn btn-sm btn-primary">Mark received &amp; refund</button>
+                </form>
+            </div>
+        </div>
+    }
+
+    @if (Model.AwaitingReceipt.TotalPages > 1)
+    {
+        <nav>
+            <ul class="pagination">
+                @for (var i = 1; i <= Model.AwaitingReceipt.TotalPages; i++)
+                {
+                    <li class="page-item @(i == Model.AwaitingReceipt.Page ? "active" : "")">
+                        <a class="page-link" asp-action="Index" asp-route-page="@Model.Pending.Page" asp-route-receivedPage="@i">@i</a>
                     </li>
                 }
             </ul>

@@ -20,6 +20,9 @@ public interface IReturnService
     /// <summary>Admin return queue - every request still awaiting a decision (Status == Requested), oldest first.</summary>
     Task<PagedResult<ReturnRequestQueueItemDto>> GetPendingQueueAsync(ReturnRequestQuery query, CancellationToken cancellationToken = default);
 
+    /// <summary>Admin queue for approved requests whose item(s) haven't been marked received yet (Status == Approved), oldest first - Milestone 13.3.</summary>
+    Task<PagedResult<ReturnRequestQueueItemDto>> GetAwaitingReceiptQueueAsync(ReturnRequestQuery query, CancellationToken cancellationToken = default);
+
     /// <summary>
     /// Marks the request Approved - staff now expect the item(s) shipped
     /// back. Does not process a refund or restock inventory (Milestone
@@ -28,4 +31,15 @@ public interface IReturnService
     Task<Result> ApproveAsync(int returnRequestId, CancellationToken cancellationToken = default);
 
     Task<Result> RejectAsync(int returnRequestId, string rejectionReason, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Marks an Approved request's item(s) as physically received back
+    /// (Milestone 13.3) - refunds the returned items' line total (quantity
+    /// times each OrderItem's UnitPrice; tax/shipping are not
+    /// proportionally refunded) and restocks each item at the warehouse it
+    /// was originally reserved from, in one step. Fails validation if the
+    /// request isn't Approved, or if the refund itself is declined by the
+    /// payment gateway (the request stays Approved so staff can retry).
+    /// </summary>
+    Task<Result> RefundAsync(int returnRequestId, CancellationToken cancellationToken = default);
 }

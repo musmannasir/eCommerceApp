@@ -30,6 +30,7 @@ public static class TestDatabase
             DELETE FROM AspNetRoles;
 
             DELETE FROM Payments;
+            DELETE FROM Refunds;
             DELETE FROM ReturnRequestItems;
             DELETE FROM ReturnRequests;
             DELETE FROM OrderItems;
@@ -71,6 +72,7 @@ public static class TestDatabase
             -- DELETE does not reset IDENTITY seeds (unlike TRUNCATE, which these FKs block);
             -- reset them explicitly so ids stay small and predictable across repeated local runs.
             DBCC CHECKIDENT ('Payments', RESEED, 0);
+            DBCC CHECKIDENT ('Refunds', RESEED, 0);
             DBCC CHECKIDENT ('ReturnRequestItems', RESEED, 0);
             DBCC CHECKIDENT ('ReturnRequests', RESEED, 0);
             DBCC CHECKIDENT ('OrderItems', RESEED, 0);

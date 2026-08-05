@@ -5,11 +5,13 @@ using ECommerceApp.Application.Catalog;
 using ECommerceApp.Application.Checkout;
 using ECommerceApp.Application.Common.Interfaces;
 using ECommerceApp.Application.Common.Options;
+using ECommerceApp.Application.Finance;
 using ECommerceApp.Application.Inventory;
 using ECommerceApp.Application.Marketing;
 using ECommerceApp.Application.Orders;
 using ECommerceApp.Application.Payments;
 using ECommerceApp.Application.Pricing;
+using ECommerceApp.Application.Reporting;
 using ECommerceApp.Application.Returns;
 using ECommerceApp.Application.Reviews;
 using ECommerceApp.Application.Shipping;
@@ -22,6 +24,7 @@ using ECommerceApp.Infrastructure.Catalog;
 using ECommerceApp.Infrastructure.Checkout;
 using ECommerceApp.Infrastructure.Common;
 using ECommerceApp.Infrastructure.Email;
+using ECommerceApp.Infrastructure.Finance;
 using ECommerceApp.Infrastructure.HealthChecks;
 using ECommerceApp.Infrastructure.Identity;
 using ECommerceApp.Infrastructure.Inventory;
@@ -30,6 +33,7 @@ using ECommerceApp.Infrastructure.Orders;
 using ECommerceApp.Infrastructure.Payments;
 using ECommerceApp.Infrastructure.Persistence;
 using ECommerceApp.Infrastructure.Pricing;
+using ECommerceApp.Infrastructure.Reporting;
 using ECommerceApp.Infrastructure.Returns;
 using ECommerceApp.Infrastructure.Reviews;
 using ECommerceApp.Infrastructure.Security;
@@ -126,6 +130,8 @@ public static class DependencyInjection
         services.AddScoped<IOrderService, OrderService>();
         services.AddScoped<IReviewService, ReviewService>();
         services.AddScoped<IReturnService, ReturnService>();
+        services.AddScoped<IFinanceService, FinanceService>();
+        services.AddScoped<IReportingService, ReportingService>();
 
         return services;
     }

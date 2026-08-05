@@ -2,11 +2,13 @@ using ECommerceApp.Infrastructure.Addresses;
 using ECommerceApp.Infrastructure.Carts;
 using ECommerceApp.Infrastructure.Catalog;
 using ECommerceApp.Infrastructure.Checkout;
+using ECommerceApp.Infrastructure.Finance;
 using ECommerceApp.Infrastructure.Inventory;
 using ECommerceApp.Infrastructure.Marketing;
 using ECommerceApp.Infrastructure.Orders;
 using ECommerceApp.Infrastructure.Payments;
 using ECommerceApp.Infrastructure.Pricing;
+using ECommerceApp.Infrastructure.Reporting;
 using ECommerceApp.Infrastructure.Returns;
 using ECommerceApp.Infrastructure.Reviews;
 using ECommerceApp.Infrastructure.Shipping;
@@ -48,6 +50,8 @@ public sealed class CatalogTestHarness : IDisposable
     public SimulatedPaymentGateway PaymentGateway { get; }
     public InventoryService InventoryService { get; }
     public OrderService OrderService { get; }
+    public FinanceService FinanceService { get; }
+    public ReportingService ReportingService { get; }
 
     public CatalogTestHarness()
     {
@@ -90,8 +94,10 @@ public sealed class CatalogTestHarness : IDisposable
         AddressService = new AddressService(DbContext, Clock);
         PaymentGateway = new SimulatedPaymentGateway(Clock);
         InventoryService = new InventoryService(DbContext, Clock, new FakeCurrentUserService());
-        ReturnService = new ReturnService(DbContext, Clock, new FakeCurrentUserService());
+        ReturnService = new ReturnService(DbContext, Clock, new FakeCurrentUserService(), InventoryService, PaymentGateway);
         OrderService = new OrderService(DbContext, PaymentGateway, InventoryService, ReturnService, Clock);
+        FinanceService = new FinanceService(DbContext, Clock);
+        ReportingService = new ReportingService(DbContext, Clock);
     }
 
     public void Dispose() => DbContext.Dispose();

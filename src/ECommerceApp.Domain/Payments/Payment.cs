@@ -9,8 +9,8 @@ namespace ECommerceApp.Domain.Payments;
 /// (no soft delete, no UpdatedAt, no RowVersion), the same reasoning
 /// <see cref="Inventory.StockMovement"/> uses: this row is written once,
 /// synchronously, with its final outcome already known, and never updated
-/// or deleted afterward - a correction (e.g. a refund) is Milestone 13.3's
-/// job and would record a new, separate transaction rather than editing this
+/// or deleted afterward - a correction (a refund, Milestone 13.3) records a
+/// new, separate <see cref="Refund"/> transaction rather than editing this
 /// one. <see cref="ISoftDeletable"/>'s own doc comment is explicit that
 /// "immutable financial transaction records (payments, refunds, ledger
 /// entries, audit logs) must NOT implement this interface."
