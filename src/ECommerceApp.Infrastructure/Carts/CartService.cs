@@ -99,7 +99,7 @@ public sealed class CartService : ICartService
         // Re-adding (or first adding) always re-stamps PriceWhenAdded to the
         // current live price - the customer is looking at today's price right
         // now, so there's nothing stale to flag until it changes again later.
-        var currentPrice = _pricingService.Calculate(product.SellingPrice, product.CompareAtPrice, variant?.SellingPrice, variant?.CompareAtPrice).FinalPrice;
+        var currentPrice = (await _pricingService.CalculateAsync(product.SellingPrice, product.CompareAtPrice, variant?.SellingPrice, variant?.CompareAtPrice, cancellationToken)).FinalPrice;
 
         if (existingItem is not null)
         {
@@ -162,7 +162,7 @@ public sealed class CartService : ICartService
         // An explicit quantity change is a fresh look at the line, same as a
         // re-add - re-stamp the price so a stale PriceChanged notice doesn't
         // linger after the customer has already acted on this line.
-        item.PriceWhenAdded = _pricingService.Calculate(product!.SellingPrice, product.CompareAtPrice, variant?.SellingPrice, variant?.CompareAtPrice).FinalPrice;
+        item.PriceWhenAdded = (await _pricingService.CalculateAsync(product!.SellingPrice, product.CompareAtPrice, variant?.SellingPrice, variant?.CompareAtPrice, cancellationToken)).FinalPrice;
         cart.UpdatedAtUtc = _clock.UtcNow;
         await _dbContext.SaveChangesAsync(cancellationToken);
 
@@ -411,8 +411,8 @@ public sealed class CartService : ICartService
             .FirstOrDefaultAsync(cancellationToken);
         var variant = variantId.HasValue ? product?.Variants.FirstOrDefault(v => v.Id == variantId.Value) : null;
 
-        return _pricingService.Calculate(
-            product?.SellingPrice ?? 0m, product?.CompareAtPrice, variant?.SellingPrice, variant?.CompareAtPrice).FinalPrice;
+        return (await _pricingService.CalculateAsync(
+            product?.SellingPrice ?? 0m, product?.CompareAtPrice, variant?.SellingPrice, variant?.CompareAtPrice, cancellationToken)).FinalPrice;
     }
 
     private static string StockMessage(int available) =>
@@ -510,7 +510,7 @@ public sealed class CartService : ICartService
                 (item.ProductVariantId is null || variant is { IsActive: true });
 
             var sku = variant?.SKU ?? product.BaseSKU;
-            var price = _pricingService.Calculate(product.SellingPrice, product.CompareAtPrice, variant?.SellingPrice, variant?.CompareAtPrice);
+            var price = await _pricingService.CalculateAsync(product.SellingPrice, product.CompareAtPrice, variant?.SellingPrice, variant?.CompareAtPrice, cancellationToken);
             var (stockState, available, allowBackorder) = await GetStockAsync(item.ProductId, item.ProductVariantId, product.LowStockThreshold, cancellationToken);
             var variantDescription = variant is null
                 ? null

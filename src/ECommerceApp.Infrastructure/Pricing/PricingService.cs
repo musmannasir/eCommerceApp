@@ -1,19 +1,19 @@
+using ECommerceApp.Application.Configuration;
 using ECommerceApp.Application.Pricing;
 using ECommerceApp.Application.Pricing.Models;
-using Microsoft.Extensions.Configuration;
 
 namespace ECommerceApp.Infrastructure.Pricing;
 
 public sealed class PricingService : IPricingService
 {
-    private readonly IConfiguration _configuration;
+    private readonly IStoreSettingsService _storeSettingsService;
 
-    public PricingService(IConfiguration configuration)
+    public PricingService(IStoreSettingsService storeSettingsService)
     {
-        _configuration = configuration;
+        _storeSettingsService = storeSettingsService;
     }
 
-    public PriceResultDto Calculate(decimal basePrice, decimal? baseCompareAtPrice, decimal? variantPrice, decimal? variantCompareAtPrice)
+    public async Task<PriceResultDto> CalculateAsync(decimal basePrice, decimal? baseCompareAtPrice, decimal? variantPrice, decimal? variantCompareAtPrice, CancellationToken cancellationToken = default)
     {
         var effectivePrice = variantPrice ?? basePrice;
         var effectiveCompareAtPrice = variantCompareAtPrice ?? baseCompareAtPrice;
@@ -30,7 +30,8 @@ public sealed class PricingService : IPricingService
             discountPercent = (int)Math.Round((1 - finalPrice / effectiveCompareAtPrice.Value) * 100);
         }
 
-        var isTaxInclusive = _configuration.GetValue("Store:PricesIncludeTax", false);
+        var storeSettings = await _storeSettingsService.GetAsync(cancellationToken);
+        var isTaxInclusive = storeSettings.PricesIncludeTax;
 
         return new PriceResultDto(basePrice, effectivePrice, promotionAdjustment, finalPrice, effectiveCompareAtPrice, discountAmount, discountPercent, isTaxInclusive);
     }

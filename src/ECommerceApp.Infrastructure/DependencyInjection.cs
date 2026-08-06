@@ -5,6 +5,7 @@ using ECommerceApp.Application.Catalog;
 using ECommerceApp.Application.Checkout;
 using ECommerceApp.Application.Common.Interfaces;
 using ECommerceApp.Application.Common.Options;
+using ECommerceApp.Application.Configuration;
 using ECommerceApp.Application.Finance;
 using ECommerceApp.Application.Inventory;
 using ECommerceApp.Application.Marketing;
@@ -26,6 +27,7 @@ using ECommerceApp.Infrastructure.Carts;
 using ECommerceApp.Infrastructure.Catalog;
 using ECommerceApp.Infrastructure.Checkout;
 using ECommerceApp.Infrastructure.Common;
+using ECommerceApp.Infrastructure.Configuration;
 using ECommerceApp.Infrastructure.Email;
 using ECommerceApp.Infrastructure.Finance;
 using ECommerceApp.Infrastructure.HealthChecks;
@@ -108,6 +110,8 @@ public static class DependencyInjection
 
         services.AddScoped<IAuthService, AuthService>();
         services.AddScoped<RoleAndAdminSeeder>();
+        services.AddScoped<IStoreSettingsService, StoreSettingsService>();
+        services.AddScoped<StoreSettingsSeeder>();
         services.AddSingleton<IEmailSender, DevEmailSender>();
         services.AddScoped<IEmailNotificationService, EmailNotificationService>();
         services.AddScoped<IOutboxProcessor, OutboxProcessor>();
@@ -131,7 +135,10 @@ public static class DependencyInjection
         services.AddScoped<ICatalogBrowseService, CatalogBrowseService>();
         services.AddScoped<IProductDetailService, ProductDetailService>();
         services.AddScoped<IRecommendationService, RecommendationService>();
-        services.AddSingleton<IPricingService, PricingService>();
+        // Scoped (not Singleton) because it depends on the scoped, DB-backed
+        // IStoreSettingsService - it remains a stateless pure calculator with
+        // no internal mutable state of its own.
+        services.AddScoped<IPricingService, PricingService>();
         services.AddScoped<ICartService, CartService>();
         services.AddScoped<IWishlistService, WishlistService>();
         services.AddScoped<IAddressService, AddressService>();

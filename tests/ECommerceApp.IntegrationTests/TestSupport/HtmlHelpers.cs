@@ -33,6 +33,24 @@ public static partial class HtmlHelpers
         return match.Groups[1].Value;
     }
 
+    /// <summary>Reads a named hidden input's value - e.g. Settings' base64 RowVersion concurrency token.</summary>
+    public static string ExtractInputValue(string html, string name)
+    {
+        var tagMatch = new Regex($"""<input[^>]*name="{Regex.Escape(name)}"[^>]*>""").Match(html);
+        if (!tagMatch.Success)
+        {
+            throw new InvalidOperationException($"Could not find an input element named '{name}' in the response HTML.");
+        }
+
+        var valueMatch = ValueAttributeRegex().Match(tagMatch.Value);
+        if (!valueMatch.Success)
+        {
+            throw new InvalidOperationException($"Found the '{name}' input element but no value attribute.");
+        }
+
+        return valueMatch.Groups[1].Value;
+    }
+
     [GeneratedRegex("""<input[^>]*name="__RequestVerificationToken"[^>]*>""")]
     private static partial Regex AntiForgeryInputTagRegex();
 

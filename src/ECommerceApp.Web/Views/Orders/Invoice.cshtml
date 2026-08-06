@@ -1,9 +1,9 @@
 @using ECommerceApp.Application.Orders.Models
-@inject Microsoft.Extensions.Configuration.IConfiguration Configuration
+@inject ECommerceApp.Application.Configuration.IStoreSettingsService StoreSettingsService
 @model OrderDto
 @{
     ViewData["Title"] = $"Invoice - {Model.OrderNumber}";
-    var storeName = Configuration["Store:Name"] ?? "ECommerceApp Store";
+    var storeName = (await StoreSettingsService.GetAsync()).StoreName;
 }
 
 <style>

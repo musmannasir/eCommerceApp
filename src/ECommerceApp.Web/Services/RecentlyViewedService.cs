@@ -1,5 +1,6 @@
 using System.Security.Claims;
 using ECommerceApp.Application.Common.Interfaces;
+using ECommerceApp.Application.Configuration;
 using ECommerceApp.Application.Storefront;
 using ECommerceApp.Application.Storefront.Models;
 using ECommerceApp.Domain.Storefront;
@@ -19,29 +20,26 @@ namespace ECommerceApp.Web.Services;
 public sealed class RecentlyViewedService : IRecentlyViewedService
 {
     private const string CookieName = "RecentlyViewed";
-    private const int DefaultMaxItems = 10;
 
     private readonly IHttpContextAccessor _httpContextAccessor;
     private readonly ApplicationDbContext _dbContext;
     private readonly IClock _clock;
-    private readonly IConfiguration _configuration;
+    private readonly IStoreSettingsService _storeSettingsService;
     private readonly IWebHostEnvironment _environment;
 
     public RecentlyViewedService(
         IHttpContextAccessor httpContextAccessor,
         ApplicationDbContext dbContext,
         IClock clock,
-        IConfiguration configuration,
+        IStoreSettingsService storeSettingsService,
         IWebHostEnvironment environment)
     {
         _httpContextAccessor = httpContextAccessor;
         _dbContext = dbContext;
         _clock = clock;
-        _configuration = configuration;
+        _storeSettingsService = storeSettingsService;
         _environment = environment;
     }
-
-    private int MaxItems => _configuration.GetValue("Store:RecentlyViewedMaxItems", DefaultMaxItems);
 
     public async Task RecordViewAsync(int productId, CancellationToken cancellationToken = default)
     {
@@ -52,19 +50,21 @@ public sealed class RecentlyViewedService : IRecentlyViewedService
         }
         else
         {
-            RecordForGuest(productId);
+            var maxItems = (await _storeSettingsService.GetAsync(cancellationToken)).RecentlyViewedMaxItems;
+            RecordForGuest(productId, maxItems);
         }
     }
 
     public async Task<IReadOnlyList<HomeProductCardDto>> GetRecentlyViewedAsync(int? excludeProductId = null, CancellationToken cancellationToken = default)
     {
         var userId = GetAuthenticatedUserId();
+        var maxItems = (await _storeSettingsService.GetAsync(cancellationToken)).RecentlyViewedMaxItems;
         var orderedProductIds = userId is not null
             ? await _dbContext.RecentlyViewedItems
                 .Where(r => r.UserId == userId)
                 .OrderByDescending(r => r.ViewedAtUtc)
                 .Select(r => r.ProductId)
-                .Take(MaxItems)
+                .Take(maxItems)
                 .ToListAsync(cancellationToken)
             : ReadGuestCookie();
 
@@ -124,10 +124,11 @@ public sealed class RecentlyViewedService : IRecentlyViewedService
 
         await _dbContext.SaveChangesAsync(cancellationToken);
 
+        var maxItems = (await _storeSettingsService.GetAsync(cancellationToken)).RecentlyViewedMaxItems;
         var excess = await _dbContext.RecentlyViewedItems
             .Where(r => r.UserId == userId)
             .OrderByDescending(r => r.ViewedAtUtc)
-            .Skip(MaxItems)
+            .Skip(maxItems)
             .ToListAsync(cancellationToken);
 
         if (excess.Count > 0)
@@ -137,7 +138,7 @@ public sealed class RecentlyViewedService : IRecentlyViewedService
         }
     }
 
-    private void RecordForGuest(int productId)
+    private void RecordForGuest(int productId, int maxItems)
     {
         var httpContext = _httpContextAccessor.HttpContext;
         if (httpContext is null)
@@ -148,9 +149,9 @@ public sealed class RecentlyViewedService : IRecentlyViewedService
         var ids = ReadGuestCookie();
         ids.Remove(productId);
         ids.Insert(0, productId);
-        if (ids.Count > MaxItems)
+        if (ids.Count > maxItems)
         {
-            ids = ids.Take(MaxItems).ToList();
+            ids = ids.Take(maxItems).ToList();
         }
 
         httpContext.Response.Cookies.Append(CookieName, string.Join(',', ids), new CookieOptions

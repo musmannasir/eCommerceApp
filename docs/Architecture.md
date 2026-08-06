@@ -2788,6 +2788,182 @@ account created there), filtering by event type and by user email both
 narrowed the results correctly, and the CSV export returned real content
 matching whatever filter was applied.
 
+## Store configuration (Milestone 16.3)
+
+**Same brief-text gap as Milestones 6.1-16.2** - scope was agreed with the
+user as a concrete reading of the milestone name, researched first the same
+way Milestone 16.2 was.
+
+**This milestone replaces static configuration with an admin-editable
+database row - it does not add new store-wide settings.** `appsettings.json`'s
+`"Store"` section (`Name`, `Currency`, `DefaultCountry`, `PricesIncludeTax`,
+`RecentlyViewedMaxItems`, `DefaultTaxCountryCode`/`DefaultTaxRegionCode`,
+`DefaultShippingCountryCode`/`DefaultShippingRegionCode`) was read via raw
+`IConfiguration["Store:X"]` string-key lookups scattered across three
+projects - fine for values that never change without a redeploy, but the
+milestone name implies an admin should be able to edit these at runtime.
+New `StoreSettings` (`AuditableEntity`, deliberately not a plain
+`BaseEntity`) is a **singleton row** - exactly one is ever seeded or read.
+It derives from `AuditableEntity` specifically for `RowVersion`: two admins
+editing this one shared row concurrently is a real possibility ordinary
+per-record entities don't have to worry about, so optimistic concurrency
+matters here more than usual. `IsDeleted` is inherited but never
+meaningfully used - there is no "recycle bin" for the one settings row.
+
+**`IStoreSettingsService.GetAsync()` is cached and never fails.** It's
+called by every storefront and admin page's layout (`_Layout.cshtml`,
+`_AdminLayout.cshtml`, `Invoice.cshtml`), so an uncached DB round trip per
+request would be real, avoidable overhead for one small, low-churn row -
+the same reasoning category-nav caching (Milestone 4.3) already
+established. If the seeded row is ever missing (a fresh database, or a
+seeding failure at startup), it falls back to the exact same default values
+`appsettings.json` used to declare, rather than breaking every page render.
+
+**`UpdateAsync()` mirrors `OrderService`'s existing inventory-reservation
+concurrency handling.** The submitted `RowVersion` (round-tripped through a
+hidden form field, base64-encoded) is set as the tracked entity's original
+value before `SaveChangesAsync`, so EF Core's optimistic-concurrency check
+compares it against the row's actual current value at save time. A
+`DbUpdateConcurrencyException` is caught and converted to
+`Result.Failure(Error.Conflict(...))` with a "someone else changed these
+settings, please reload" message - the same "don't let a raw DB exception
+reach the caller" pattern `OrderService.CreateOrderAsync` already
+established for stock-reservation races. A successful update writes a new
+`SecurityAuditEvent` (`StoreSettingsUpdated`) and invalidates the cache
+before returning, so the admin's own change is visible immediately rather
+than waiting out the cache's expiry.
+
+**All seven existing consumers were migrated off `IConfiguration`.**
+`TaxService`/`ShippingService` (default jurisdiction for Cart's estimated
+tax/shipping), `RecentlyViewedService` (max items), the three layout views
+(store name), and `PricingService` (tax-inclusive display flag) all now
+inject `IStoreSettingsService`. **`IPricingService.Calculate` became
+`CalculateAsync`** as part of this - it now needs to read store settings,
+which is inherently async - and its DI registration changed from
+`AddSingleton` to `AddScoped` accordingly, since it depends on the scoped,
+DB-backed `IStoreSettingsService`. This is judged safe: `PricingService`
+remains a stateless pure calculator with no internal mutable state of its
+own, per its own existing doc comment - the `Scoped` change only reflects
+what it now depends on, not a change in what it *is*. The `"Store"` section
+was then removed from `appsettings.json` entirely, since leaving it there
+unread would have been actively misleading.
+
+**New `/Admin/Settings` is a single Index GET+POST pair, not list/CRUD -
+the first UI of this shape in the Admin area.** Every other Admin
+controller manages many rows; this one manages exactly one. Gated by
+`CanManageUsers` - the same tightest-existing-tier judgment call Milestone
+16.2's audit log made, since there's no dedicated "manage store
+configuration" policy and inventing one for a single settings screen would
+have been speculative. The form's fields are grouped into General/Pricing/
+Storefront/Checkout-defaults sections purely for readability; there is no
+corresponding grouping in the DB.
+
+**`StoreSettingsSeeder` seeds the one row from `appsettings.json`'s legacy
+values at first run**, mirroring `RoleAndAdminSeeder`'s shape, DI
+registration (`AddScoped`), and `Program.cs` wiring (called right after
+role/admin seeding, same try/catch resilience - "the app will keep
+starting" on failure) - so upgrading an existing deployment is
+behavior-preserving: the admin-editable row starts out identical to what
+static configuration used to declare.
+
+**This closes out Milestone 16 in full** (16.1 User management, 16.2 Audit
+logging, 16.3 Store configuration).
+
+**Manually verified** against the real dev database: edited the store name
+and "Prices include tax" through the real `/Admin/Settings` form and
+confirmed both persisted (a direct read of the form's own hidden
+`RowVersion` field confirmed it advanced on each successful save), confirmed
+the storefront layout's page title, the admin layout's brand text, and
+the invoice header all reflected the new store name immediately with no
+app restart (proof the cache invalidation on `UpdateAsync` actually works,
+not just that the DB row changed), confirmed a `StoreSettingsUpdated` row
+appeared in the Milestone 16.2 audit log, and confirmed the Cart page still
+renders correctly post-refactor of `TaxService`/`ShippingService`. A
+dedicated integration test (`SettingsFlowTests`) exercises the
+RowVersion-conflict path against the real SQL Server test database, since
+that's not reliably reproducible against the EF Core InMemory provider used
+elsewhere for unit tests.
+
+## Security headers & CORS (Milestone 17.1)
+
+**Not a brief-text gap in the usual sense - the codebase itself named this
+milestone's scope.** `Security.md`'s own "What's still deliberately not
+built" section, written during Milestone 1, said explicitly:
+*"Content-Security-Policy and other security response headers, and CORS
+configuration, belong to Milestone 17 (hardening pass)."* That's a stronger
+signal than the "reasonable conventions" reading every milestone since 6.1
+has had to fall back on, so it's treated as the brief here.
+
+**`SecurityHeadersMiddleware` is the first middleware in the pipeline**
+(before exception handling, before routing), so the hardening headers land
+on every response regardless of what happens downstream - a 200, a 404, a
+500 rendered by `UseExceptionHandler`, all get the same headers. It mirrors
+`CorrelationIdMiddleware`'s exact shape (set headers, then call `_next`) for
+consistency with the one other cross-cutting middleware already in this
+project.
+
+**Before picking a CSP, an Explore agent audited every view for inline
+JS/CSS** rather than guessing at what a strict policy would break. Findings:
+5 files with inline `&lt;script&gt;` blocks, 17 files with inline
+`onsubmit`/`onclick`/`onchange` attributes (nearly every admin delete-
+confirmation dialog uses `onsubmit="return confirm(...)"`), and 74
+occurrences of inline `style="..."` across 20 files - with zero CDN usage
+anywhere (everything is already same-origin). This directly shaped the
+scope decision below rather than being incidental research.
+
+**`script-src`/`style-src` deliberately keep `'unsafe-inline'` rather than
+nonces.** A fully strict policy is achievable for `<script>` content (small,
+contained set of files, all in `@section Scripts` blocks) but has no
+equivalent for `style="..."` attributes - CSP nonces only apply to
+`<style>` elements, not inline style attributes, and there are no
+`<style>` blocks in this app, only attributes. Eliminating `'unsafe-inline'`
+fully would mean rewriting ~25 view files (including every admin delete-
+confirmation dialog - a real functional-regression risk if done carelessly)
+plus converting 74 inline-style occurrences to CSS classes across 20 files.
+That's real, behavior-sensitive work suited to its own follow-up, not
+something to fold silently into a headers-middleware milestone. The CSP
+still adds real value without it: `object-src 'none'`, `base-uri 'self'`,
+`form-action 'self'`, `frame-ancestors 'none'`, and `default-src 'self'`
+(which alone blocks image/font/media exfiltration to an external origin,
+one of the more common outcomes of a successful injection even without
+script execution) are all still enforced.
+
+**`img-src` needed `data:` - found during manual verification, not
+anticipated in the earlier audit.** The inline-content audit only searched
+this app's own Razor views, not vendored third-party CSS. Bootstrap's own
+`bootstrap.min.css` embeds `data:image/svg+xml` URIs for `<select>` carets
+and similar UI icons - `img-src 'self'` alone silently broke every
+`<select>` element's dropdown arrow across the whole app (confirmed via a
+real CSP violation in the browser console during verification, not just
+inferred). This is the exact reason manual browser verification exists as a
+required step rather than trusting a build-and-test pass alone - the static
+audit couldn't have caught a CSS-embedded resource without literally
+opening the page.
+
+**CORS**: no cross-origin caller exists anywhere in this codebase (the
+storefront's own AJAX calls - Cart, Wishlist, product-detail resolution -
+are all same-origin fetches). Rather than leave `AddCors()` never called at
+all (today's actual state, and functionally identical to "deny everything"
+from a browser's perspective, but an *implicit* decision no test protects),
+a named default policy is registered from `Cors:AllowedOrigins`
+(`appsettings.json`, empty by default). This costs nothing today - browsers
+already reject cross-origin requests to `/api/v1/auth` with zero CORS
+headers configured - but makes the "no cross-origin access" stance
+explicit, testable (`SecurityHardeningFlowTests`), and one config change
+away from supporting a future consumer (a separate SPA, a mobile client)
+without a code change.
+
+**Manually verified** against the real dev database: fetched `/` directly
+and confirmed all five headers were present with the exact expected values;
+loaded the storefront home page, the product detail page (the highest-risk
+page for CSP breakage - it has the app's only AJAX Add-to-Cart inline
+script plus an image-zoom inline script), and an admin page with inline
+delete-confirmation dialogs (`/Admin/Brands`), confirming zero CSP
+violations in the browser console on any of them after the `img-src` fix;
+and confirmed the fix's before/after directly - the same page in a
+freshly-opened tab (bypassing the first tab's cached CSP enforcement from
+before the fix) showed the `data:image/svg+xml` violation cleared.
+
 ## Framework version note
 
 The brief fixes the stack at **.NET 8**. This machine has only the **.NET 10**

@@ -8,6 +8,7 @@ using ECommerceApp.Application.Notifications;
 using ECommerceApp.Application.Storefront;
 using ECommerceApp.Domain.Security;
 using ECommerceApp.Infrastructure;
+using ECommerceApp.Infrastructure.Configuration;
 using ECommerceApp.Infrastructure.Security;
 using ECommerceApp.Web.Middleware;
 using ECommerceApp.Web.Notifications;
@@ -200,9 +201,28 @@ try
         });
     });
 
+    // No cross-origin caller is evidenced anywhere in this codebase today (the
+    // storefront's own JS only ever calls same-origin endpoints), so the
+    // default policy allows zero origins - an explicit, testable "deny all
+    // cross-origin" stance rather than an accidental byproduct of never
+    // calling AddCors(). A future consumer (mobile app, separate SPA) opts in
+    // by listing its origin in Cors:AllowedOrigins, no code change needed.
+    builder.Services.AddCors(options =>
+    {
+        options.AddDefaultPolicy(policy =>
+        {
+            var allowedOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>() ?? [];
+            if (allowedOrigins.Length > 0)
+            {
+                policy.WithOrigins(allowedOrigins).AllowAnyHeader().AllowAnyMethod();
+            }
+        });
+    });
+
     var app = builder.Build();
 
     app.UseMiddleware<CorrelationIdMiddleware>();
+    app.UseMiddleware<SecurityHeadersMiddleware>();
 
     if (app.Environment.IsDevelopment())
     {
@@ -219,6 +239,7 @@ try
     app.UseHttpsRedirection();
     app.UseRouting();
 
+    app.UseCors();
     app.UseRateLimiter();
 
     app.UseAuthentication();
@@ -258,6 +279,19 @@ try
             app.Logger.LogError(
                 ex,
                 "Role/SuperAdmin seeding failed - the database may not be migrated yet or is unreachable. " +
+                "The app will keep starting; run `dotnet ef database update` and restart once the database is ready.");
+        }
+
+        try
+        {
+            var storeSettingsSeeder = scope.ServiceProvider.GetRequiredService<StoreSettingsSeeder>();
+            await storeSettingsSeeder.SeedAsync();
+        }
+        catch (Exception ex)
+        {
+            app.Logger.LogError(
+                ex,
+                "StoreSettings seeding failed - the database may not be migrated yet or is unreachable. " +
                 "The app will keep starting; run `dotnet ef database update` and restart once the database is ready.");
         }
     }

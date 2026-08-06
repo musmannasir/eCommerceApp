@@ -143,7 +143,51 @@ the logger while another is mid-startup. `ECommerceApp.IntegrationTests` sets
 `[assembly: CollectionBehavior(DisableTestParallelization = true)]` to avoid
 this - a real flake this milestone's testing turned up, not a hypothetical.
 
-## What's still deliberately not built
+## Security response headers (Milestone 17.1)
 
-Content-Security-Policy and other security response headers, and CORS
-configuration, belong to Milestone 17 (hardening pass).
+Every response - MVC pages, `/api/*`, error/status-code pages - carries a
+fixed set of hardening headers, set by `SecurityHeadersMiddleware` (the
+first middleware in the pipeline, so it runs regardless of what happens
+downstream):
+
+- `X-Content-Type-Options: nosniff`
+- `X-Frame-Options: DENY`
+- `Referrer-Policy: strict-origin-when-cross-origin`
+- `Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=(), usb=()`
+- `Content-Security-Policy`: `default-src 'self'; script-src 'self'
+  'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:;
+  font-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self';
+  frame-ancestors 'none'`
+
+**`script-src`/`style-src` keep `'unsafe-inline'` - a deliberate, narrower
+scope than a fully strict CSP.** An audit before implementing found ~25 view
+files using inline `<script>` blocks, `onsubmit`/`onclick`/`onchange`
+attributes (including nearly every admin delete-confirmation dialog), or
+inline `style="..."`. Eliminating `'unsafe-inline'` via nonces is possible
+for `<script>` content but has no equivalent for `style="..."` attributes
+(CSP has no nonce mechanism for attribute-level styles), so removing it
+fully would mean rewriting ~25 behavior-sensitive views (including every
+delete confirmation) into external/nonce'd scripts and converting ~74
+inline `style="..."` occurrences to CSS classes - real, non-trivial work
+better scoped as its own follow-up than folded into a headers middleware
+milestone. The other directives (`object-src 'none'`, `base-uri 'self'`,
+`form-action 'self'`, `frame-ancestors 'none'`, `default-src 'self'`) still
+meaningfully restrict what an injected payload could do - in particular,
+`default-src`/`img-src` block exfiltration via a `<img src="https://evil...">`-
+style payload even without script execution, and `frame-ancestors 'none'`
+is the modern replacement for `X-Frame-Options` against clickjacking. `img-src`
+includes `data:` because Bootstrap's own CSS embeds `data:image/svg+xml`
+URIs for form-select carets and similar icons - discovered as a real
+regression during manual verification, not anticipated in advance.
+
+## CORS (Milestone 17.1)
+
+No cross-origin caller is evidenced anywhere in this codebase - the
+storefront's own JS only ever calls same-origin endpoints. Rather than leave
+CORS entirely unconfigured (an accidental "deny all" that a future
+`AddCors()` call elsewhere could silently change), there's now an explicit
+default policy (`Program.cs`) sourced from `Cors:AllowedOrigins`
+(`appsettings.json`, empty array by default = zero origins allowed). A
+future cross-origin consumer (a separate SPA, a mobile app calling
+`/api/v1/auth`) opts in by listing its origin in configuration - no code
+change needed.

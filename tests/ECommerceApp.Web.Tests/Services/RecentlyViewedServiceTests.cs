@@ -1,4 +1,6 @@
 using System.Security.Claims;
+using ECommerceApp.Application.Configuration;
+using ECommerceApp.Application.Configuration.Models;
 using ECommerceApp.Domain.Catalog;
 using ECommerceApp.Infrastructure.Persistence;
 using ECommerceApp.Web.Services;
@@ -7,7 +9,6 @@ using FluentAssertions;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Configuration;
 using Moq;
 
 namespace ECommerceApp.Web.Tests.Services;
@@ -27,17 +28,16 @@ public class RecentlyViewedServiceTests : IDisposable
 
     public void Dispose() => _dbContext.Dispose();
 
-    private RecentlyViewedService CreateService(IHttpContextAccessor accessor, int? maxItems = null)
+    private RecentlyViewedService CreateService(IHttpContextAccessor accessor, int maxItems = 10)
     {
-        var configValues = maxItems.HasValue
-            ? new Dictionary<string, string?> { ["Store:RecentlyViewedMaxItems"] = maxItems.Value.ToString() }
-            : new Dictionary<string, string?>();
-        var configuration = new ConfigurationBuilder().AddInMemoryCollection(configValues).Build();
+        var dto = new StoreSettingsDto("ECommerce Store", "PKR", "Pakistan", false, maxItems, "PK", "", "PK", "", Array.Empty<byte>());
+        var storeSettingsService = new Mock<IStoreSettingsService>();
+        storeSettingsService.Setup(s => s.GetAsync(It.IsAny<CancellationToken>())).ReturnsAsync(dto);
 
         var environment = new Mock<IWebHostEnvironment>();
         environment.SetupGet(e => e.EnvironmentName).Returns("Development");
 
-        return new RecentlyViewedService(accessor, _dbContext, _clock, configuration, environment.Object);
+        return new RecentlyViewedService(accessor, _dbContext, _clock, storeSettingsService.Object, environment.Object);
     }
 
     private static IHttpContextAccessor CreateGuestAccessor() =>

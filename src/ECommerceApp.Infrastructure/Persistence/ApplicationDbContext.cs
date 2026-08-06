@@ -3,6 +3,7 @@ using ECommerceApp.Domain.Addresses;
 using ECommerceApp.Domain.Carts;
 using ECommerceApp.Domain.Catalog;
 using ECommerceApp.Domain.Common;
+using ECommerceApp.Domain.Configuration;
 using ECommerceApp.Domain.Inventory;
 using ECommerceApp.Domain.Marketing;
 using ECommerceApp.Domain.Notifications;
@@ -89,6 +90,7 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser, IdentityR
     public DbSet<Review> Reviews => Set<Review>();
     public DbSet<ReviewReport> ReviewReports => Set<ReviewReport>();
     public DbSet<OutboxMessage> OutboxMessages => Set<OutboxMessage>();
+    public DbSet<StoreSettings> StoreSettings => Set<StoreSettings>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

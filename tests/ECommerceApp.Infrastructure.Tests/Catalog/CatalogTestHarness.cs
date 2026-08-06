@@ -17,7 +17,6 @@ using ECommerceApp.Infrastructure.Taxation;
 using ECommerceApp.Infrastructure.Tests.TestSupport;
 using ECommerceApp.Infrastructure.Wishlist;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Configuration;
 
 namespace ECommerceApp.Infrastructure.Tests.Catalog;
 
@@ -63,15 +62,7 @@ public sealed class CatalogTestHarness : IDisposable
         FileStorage = new FakeFileStorage();
         DbContext = new TestDbContext(options, new FakeCurrentUserService(), Clock);
 
-        var configuration = new ConfigurationBuilder()
-            .AddInMemoryCollection(new Dictionary<string, string?>
-            {
-                ["Store:DefaultTaxCountryCode"] = "US",
-                ["Store:DefaultTaxRegionCode"] = "CA",
-                ["Store:DefaultShippingCountryCode"] = "US",
-                ["Store:DefaultShippingRegionCode"] = "CA",
-            })
-            .Build();
+        var storeSettingsService = new FakeStoreSettingsService();
 
         CategoryService = new CategoryService(DbContext);
         BrandService = new BrandService(DbContext);
@@ -81,14 +72,14 @@ public sealed class CatalogTestHarness : IDisposable
         RecentlyViewedService = new FakeRecentlyViewedService();
         HomePageService = new HomePageService(DbContext, RecentlyViewedService);
         CatalogBrowseService = new CatalogBrowseService(DbContext);
-        PricingService = new PricingService(new ConfigurationBuilder().Build());
+        PricingService = new PricingService(storeSettingsService);
         RecommendationService = new RecommendationService(DbContext);
         WishlistService = new WishlistService(DbContext, Clock);
         ReviewService = new ReviewService(DbContext, Clock);
         ProductDetailService = new ProductDetailService(DbContext, PricingService, RecommendationService, RecentlyViewedService, WishlistService, ReviewService);
         PromotionService = new PromotionService(DbContext);
-        TaxService = new TaxService(DbContext, configuration);
-        ShippingService = new ShippingService(DbContext, configuration);
+        TaxService = new TaxService(DbContext, storeSettingsService);
+        ShippingService = new ShippingService(DbContext, storeSettingsService);
         CheckoutCalculationService = new CheckoutCalculationService(PromotionService, TaxService, ShippingService);
         CartService = new CartService(DbContext, PricingService, PromotionService, CheckoutCalculationService, Clock);
         AddressService = new AddressService(DbContext, Clock);
