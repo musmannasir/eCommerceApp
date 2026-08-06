@@ -2,7 +2,7 @@ using System.Security.Claims;
 using ECommerceApp.Application.Auth;
 using ECommerceApp.Application.Auth.Models;
 using ECommerceApp.Application.Carts;
-using ECommerceApp.Application.Common.Interfaces;
+using ECommerceApp.Application.Notifications;
 using ECommerceApp.Domain.Security;
 using ECommerceApp.Infrastructure.Identity;
 using ECommerceApp.Web.Models.Account;
@@ -19,7 +19,7 @@ public class AccountController : Controller
     private readonly IAuthService _authService;
     private readonly SignInManager<ApplicationUser> _signInManager;
     private readonly UserManager<ApplicationUser> _userManager;
-    private readonly IEmailSender _emailSender;
+    private readonly IOutboxProcessor _outboxProcessor;
     private readonly ICartService _cartService;
     private readonly ICartOwnerAccessor _cartOwnerAccessor;
     private readonly ILogger<AccountController> _logger;
@@ -28,7 +28,7 @@ public class AccountController : Controller
         IAuthService authService,
         SignInManager<ApplicationUser> signInManager,
         UserManager<ApplicationUser> userManager,
-        IEmailSender emailSender,
+        IOutboxProcessor outboxProcessor,
         ICartService cartService,
         ICartOwnerAccessor cartOwnerAccessor,
         ILogger<AccountController> logger)
@@ -36,7 +36,7 @@ public class AccountController : Controller
         _authService = authService;
         _signInManager = signInManager;
         _userManager = userManager;
-        _emailSender = emailSender;
+        _outboxProcessor = outboxProcessor;
         _cartService = cartService;
         _cartOwnerAccessor = cartOwnerAccessor;
         _logger = logger;
@@ -134,18 +134,15 @@ public class AccountController : Controller
             return View(model);
         }
 
-        var result = await _authService.ForgotPasswordAsync(model.Email);
+        // Builds the reset link (and, if the account exists, enqueues the
+        // email atomically with AuthService's own audit event - Milestone
+        // 15.2) without AuthService ever needing Url.Action itself.
+        await _authService.ForgotPasswordAsync(model.Email, token =>
+            Url.Action(nameof(ResetPassword), "Account", new { email = model.Email, token }, protocol: Request.Scheme)!);
 
-        if (result.Value is { } token)
-        {
-            var resetLink = Url.Action(nameof(ResetPassword), "Account",
-                new { email = model.Email, token }, protocol: Request.Scheme)!;
-
-            await _emailSender.SendAsync(
-                model.Email,
-                "Reset your password",
-                $"<p>Click <a href=\"{resetLink}\">this link</a> to reset your password. If you didn't request this, you can ignore this email.</p>");
-        }
+        // Delivers whatever was just enqueued (and any other still-pending
+        // message) right away - not yet a background job (Milestone 15.3).
+        await _outboxProcessor.ProcessPendingAsync();
 
         // Always show the same confirmation, whether or not the email is registered.
         return View("ForgotPasswordConfirmation");

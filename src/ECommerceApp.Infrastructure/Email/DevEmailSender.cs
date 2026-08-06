@@ -8,7 +8,11 @@ namespace ECommerceApp.Infrastructure.Email;
 /// preview file instead of delivering it, and deliberately does not go
 /// through <c>ILogger</c>/Serilog, so reset/confirmation links and any other
 /// sensitive content in the email body never reach the structured application
-/// log. Replaced by a real SMTP sender in Milestone 15.
+/// log. Milestone 15.1 kept this rather than adding a real SMTP sender - this
+/// environment has no real SMTP account to send through, the same reasoning
+/// <c>SimulatedPaymentGateway</c> already uses for not calling a real payment
+/// processor. <see cref="IEmailSender"/>'s abstraction boundary means a real
+/// sender could still be dropped in later without touching any caller.
 /// </summary>
 public sealed class DevEmailSender : IEmailSender
 {

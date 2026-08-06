@@ -1,13 +1,16 @@
+using System.Text.Json;
 using ECommerceApp.Application.Common.Interfaces;
 using ECommerceApp.Application.Common.Models;
 using ECommerceApp.Application.Inventory;
 using ECommerceApp.Application.Inventory.Models;
+using ECommerceApp.Application.Notifications.Models;
 using ECommerceApp.Application.Orders;
 using ECommerceApp.Application.Orders.Models;
 using ECommerceApp.Application.Payments;
 using ECommerceApp.Application.Returns;
 using ECommerceApp.Domain.Common;
 using ECommerceApp.Domain.Inventory;
+using ECommerceApp.Domain.Notifications;
 using ECommerceApp.Domain.Orders;
 using ECommerceApp.Domain.Payments;
 using ECommerceApp.Infrastructure.Persistence;
@@ -195,6 +198,37 @@ public sealed class OrderService : IOrderService
             {
                 await _inventoryService.ReleaseReservationAsync(reservationId, cancellationToken);
             }
+        }
+        else
+        {
+            // Enqueued on the same DbContext, committed by the same
+            // SaveChangesAsync call below as the Order/Payment rows - the
+            // confirmation email either commits atomically with a genuinely
+            // paid order or not at all (Milestone 15.2). Previously this was
+            // sent directly from CheckoutController after CreateOrderAsync
+            // returned, unguarded - a send failure there would have thrown
+            // an unhandled exception on PlaceOrder despite the order and
+            // charge having already succeeded.
+            var payload = new OrderConfirmationEmailOutboxPayload(
+                request.CustomerEmail,
+                new OrderConfirmationEmailModel(
+                    order.OrderNumber,
+                    order.ShippingFullName,
+                    order.CreatedAtUtc,
+                    order.Items.Select(i => new OrderConfirmationEmailItemModel(
+                        i.ProductName, i.VariantDescription, i.Quantity, i.UnitPrice * i.Quantity)).ToList(),
+                    order.Subtotal,
+                    order.PromotionDiscountAmount,
+                    order.Tax,
+                    order.ShippingCost,
+                    order.GrandTotal));
+
+            _dbContext.OutboxMessages.Add(new OutboxMessage
+            {
+                Type = OutboxMessageType.OrderConfirmationEmail,
+                PayloadJson = JsonSerializer.Serialize(payload),
+                CreatedAtUtc = _clock.UtcNow,
+            });
         }
 
         await _dbContext.SaveChangesAsync(cancellationToken);

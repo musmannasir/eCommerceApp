@@ -18,6 +18,7 @@ public static class TestDatabase
         await dbContext.Database.MigrateAsync();
 
         await dbContext.Database.ExecuteSqlRawAsync("""
+            DELETE FROM OutboxMessages;
             DELETE FROM RefreshTokens;
             DELETE FROM SecurityAuditEvents;
             DELETE FROM UserSessions;
@@ -71,6 +72,7 @@ public static class TestDatabase
 
             -- DELETE does not reset IDENTITY seeds (unlike TRUNCATE, which these FKs block);
             -- reset them explicitly so ids stay small and predictable across repeated local runs.
+            DBCC CHECKIDENT ('OutboxMessages', RESEED, 0);
             DBCC CHECKIDENT ('Payments', RESEED, 0);
             DBCC CHECKIDENT ('Refunds', RESEED, 0);
             DBCC CHECKIDENT ('ReturnRequestItems', RESEED, 0);

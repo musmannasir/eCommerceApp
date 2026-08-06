@@ -234,6 +234,7 @@ public class ReviewServiceTests : IDisposable
     {
         var request = new CreateOrderRequest(
             userId,
+            "customer@example.com",
             Guid.NewGuid().ToString("N"),
             new AddressDto(1, "Home", "Jane Doe", "555-0100", "123 Main St", null, "Springfield", "CA", "90210", "US", true),
             AppliedPromotionId: null,
