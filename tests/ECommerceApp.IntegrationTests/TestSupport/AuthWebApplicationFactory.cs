@@ -28,6 +28,7 @@ public class AuthWebApplicationFactory : WebApplicationFactory<Web.Program>
                 ["RateLimiting:AuthPermitLimit"] = "1000",
                 ["RateLimiting:ReviewSubmissionPermitLimit"] = "1000",
                 ["RateLimiting:ReviewReportPermitLimit"] = "1000",
+                ["Cors:AllowedOrigins:0"] = "https://allowed-test-origin.example",
             });
         });
     }

@@ -1,7 +1,7 @@
-@inject Microsoft.Extensions.Configuration.IConfiguration Configuration
+@inject ECommerceApp.Application.Configuration.IStoreSettingsService StoreSettingsService
 @inject Microsoft.AspNetCore.Antiforgery.IAntiforgery Antiforgery
 @{
-    var storeName = Configuration["Store:Name"] ?? "ECommerceApp Store";
+    var storeName = (await StoreSettingsService.GetAsync()).StoreName;
     var csrfToken = Antiforgery.GetAndStoreTokens(Context).RequestToken;
 }
 <!DOCTYPE html>

@@ -98,7 +98,7 @@ public sealed class ProductDetailService : IProductDetailService
         }).ToList();
 
         var sku = selectedVariant?.SKU ?? product.BaseSKU;
-        var price = _pricingService.Calculate(product.SellingPrice, product.CompareAtPrice, selectedVariant?.SellingPrice, selectedVariant?.CompareAtPrice);
+        var price = await _pricingService.CalculateAsync(product.SellingPrice, product.CompareAtPrice, selectedVariant?.SellingPrice, selectedVariant?.CompareAtPrice, cancellationToken);
 
         var images = BuildImages(product, selectedVariant?.Id);
         var (stockState, availableQuantity) = await GetStockAsync(product.Id, selectedVariant?.Id, product.LowStockThreshold, cancellationToken);
@@ -172,7 +172,7 @@ public sealed class ProductDetailService : IProductDetailService
                 "product.variant_unavailable", "This variant is not available for this product."));
         }
 
-        var price = _pricingService.Calculate(product.SellingPrice, product.CompareAtPrice, variant.SellingPrice, variant.CompareAtPrice);
+        var price = await _pricingService.CalculateAsync(product.SellingPrice, product.CompareAtPrice, variant.SellingPrice, variant.CompareAtPrice, cancellationToken);
         var images = BuildImages(product, variant.Id);
         var (stockState, availableQuantity) = await GetStockAsync(product.Id, variant.Id, product.LowStockThreshold, cancellationToken);
 

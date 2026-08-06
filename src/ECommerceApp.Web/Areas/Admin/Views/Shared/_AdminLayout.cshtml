@@ -1,6 +1,6 @@
-@inject Microsoft.Extensions.Configuration.IConfiguration Configuration
+@inject ECommerceApp.Application.Configuration.IStoreSettingsService StoreSettingsService
 @{
-    var storeName = Configuration["Store:Name"] ?? "ECommerceApp Store";
+    var storeName = (await StoreSettingsService.GetAsync()).StoreName;
 }
 <!DOCTYPE html>
 <html lang="en">
@@ -46,7 +46,7 @@
                 <li class="nav-item"><a class="nav-link" asp-area="Admin" asp-controller="Ledger" asp-action="Index">Ledger</a></li>
                 <li class="nav-item"><a class="nav-link" asp-area="Admin" asp-controller="Ledger" asp-action="CashFlow">Cash Flow</a></li>
                 <li class="nav-item"><a class="nav-link" asp-area="Admin" asp-controller="Reports" asp-action="Index">Reports</a></li>
-                <li class="nav-item"><span class="nav-link disabled" aria-disabled="true">Settings</span></li>
+                <li class="nav-item"><a class="nav-link" asp-area="Admin" asp-controller="Settings" asp-action="Index">Settings</a></li>
             </ul>
         </aside>
         <main class="flex-grow-1 p-4">

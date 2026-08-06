@@ -20,4 +20,5 @@ public enum SecurityEventType
     UserActivated,
     UserDeactivated,
     UserUnlocked,
+    StoreSettingsUpdated,
 }

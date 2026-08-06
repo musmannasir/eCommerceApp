@@ -1,11 +1,11 @@
 using ECommerceApp.Application.Common.Models;
+using ECommerceApp.Application.Configuration;
 using ECommerceApp.Application.Shipping;
 using ECommerceApp.Application.Shipping.Models;
 using ECommerceApp.Domain.Common;
 using ECommerceApp.Domain.Shipping;
 using ECommerceApp.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Configuration;
 
 namespace ECommerceApp.Infrastructure.Shipping;
 
@@ -21,12 +21,12 @@ namespace ECommerceApp.Infrastructure.Shipping;
 public sealed class ShippingService : IShippingService
 {
     private readonly ApplicationDbContext _dbContext;
-    private readonly IConfiguration _configuration;
+    private readonly IStoreSettingsService _storeSettingsService;
 
-    public ShippingService(ApplicationDbContext dbContext, IConfiguration configuration)
+    public ShippingService(ApplicationDbContext dbContext, IStoreSettingsService storeSettingsService)
     {
         _dbContext = dbContext;
-        _configuration = configuration;
+        _storeSettingsService = storeSettingsService;
     }
 
     public async Task<Result<ShippingMethodDto>> CreateAsync(CreateShippingMethodRequest request, CancellationToken cancellationToken = default)
@@ -173,13 +173,14 @@ public sealed class ShippingService : IShippingService
     public async Task<EstimatedShippingResult> CalculateEstimatedShippingAsync(
         decimal totalWeightKg, decimal subtotal, CancellationToken cancellationToken = default)
     {
-        var countryCode = _configuration["Store:DefaultShippingCountryCode"];
+        var storeSettings = await _storeSettingsService.GetAsync(cancellationToken);
+        var countryCode = storeSettings.DefaultShippingCountryCode;
         if (string.IsNullOrWhiteSpace(countryCode))
         {
             return new EstimatedShippingResult(0, false);
         }
 
-        var regionCode = _configuration["Store:DefaultShippingRegionCode"];
+        var regionCode = storeSettings.DefaultShippingRegionCode;
         var options = await GetAvailableShippingOptionsAsync(totalWeightKg, subtotal, countryCode, regionCode, cancellationToken);
 
         if (options.Count == 0)

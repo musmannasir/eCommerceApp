@@ -1,0 +1,79 @@
+@model StoreSettingsViewModel
+@{
+    ViewData["Title"] = "Store settings";
+}
+
+<h1 class="h3 mb-4">Store settings</h1>
+
+@if (TempData["Message"] is string message)
+{
+    <div class="alert alert-success">@message</div>
+}
+
+<div class="row">
+    <div class="col-md-7">
+        <form asp-action="Index" method="post">
+            <input type="hidden" asp-for="RowVersion" />
+            <div asp-validation-summary="ModelOnly"></div>
+
+            <h2 class="h6 text-muted text-uppercase mt-2">General</h2>
+            <div class="mb-3">
+                <label asp-for="StoreName" class="form-label"></label>
+                <input asp-for="StoreName" class="form-control" />
+                <span asp-validation-for="StoreName" class="text-danger small"></span>
+            </div>
+            <div class="row">
+                <div class="col-md-6 mb-3">
+                    <label asp-for="Currency" class="form-label"></label>
+                    <input asp-for="Currency" class="form-control" />
+                    <span asp-validation-for="Currency" class="text-danger small"></span>
+                </div>
+                <div class="col-md-6 mb-3">
+                    <label asp-for="DefaultCountry" class="form-label"></label>
+                    <input asp-for="DefaultCountry" class="form-control" />
+                    <span asp-validation-for="DefaultCountry" class="text-danger small"></span>
+                </div>
+            </div>
+
+            <h2 class="h6 text-muted text-uppercase mt-4">Pricing</h2>
+            <div class="mb-3 form-check">
+                <input asp-for="PricesIncludeTax" class="form-check-input" />
+                <label asp-for="PricesIncludeTax" class="form-check-label"></label>
+            </div>
+
+            <h2 class="h6 text-muted text-uppercase mt-4">Storefront</h2>
+            <div class="mb-3 col-md-6 px-0">
+                <label asp-for="RecentlyViewedMaxItems" class="form-label"></label>
+                <input asp-for="RecentlyViewedMaxItems" class="form-control" />
+                <span asp-validation-for="RecentlyViewedMaxItems" class="text-danger small"></span>
+            </div>
+
+            <h2 class="h6 text-muted text-uppercase mt-4">Checkout defaults</h2>
+            <p class="text-muted small">
+                Used for the Cart page's estimated tax/shipping before a customer has entered a shipping address.
+            </p>
+            <div class="row">
+                <div class="col-md-3 mb-3">
+                    <label asp-for="DefaultTaxCountryCode" class="form-label"></label>
+                    <input asp-for="DefaultTaxCountryCode" class="form-control" />
+                    <span asp-validation-for="DefaultTaxCountryCode" class="text-danger small"></span>
+                </div>
+                <div class="col-md-3 mb-3">
+                    <label asp-for="DefaultTaxRegionCode" class="form-label"></label>
+                    <input asp-for="DefaultTaxRegionCode" class="form-control" />
+                </div>
+                <div class="col-md-3 mb-3">
+                    <label asp-for="DefaultShippingCountryCode" class="form-label"></label>
+                    <input asp-for="DefaultShippingCountryCode" class="form-control" />
+                    <span asp-validation-for="DefaultShippingCountryCode" class="text-danger small"></span>
+                </div>
+                <div class="col-md-3 mb-3">
+                    <label asp-for="DefaultShippingRegionCode" class="form-label"></label>
+                    <input asp-for="DefaultShippingRegionCode" class="form-control" />
+                </div>
+            </div>
+
+            <button type="submit" class="btn btn-primary">Save</button>
+        </form>
+    </div>
+</div>

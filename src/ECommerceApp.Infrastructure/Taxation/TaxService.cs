@@ -1,11 +1,11 @@
 using ECommerceApp.Application.Common.Models;
+using ECommerceApp.Application.Configuration;
 using ECommerceApp.Application.Taxation;
 using ECommerceApp.Application.Taxation.Models;
 using ECommerceApp.Domain.Common;
 using ECommerceApp.Domain.Taxation;
 using ECommerceApp.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Configuration;
 
 namespace ECommerceApp.Infrastructure.Taxation;
 
@@ -20,12 +20,12 @@ namespace ECommerceApp.Infrastructure.Taxation;
 public sealed class TaxService : ITaxService
 {
     private readonly ApplicationDbContext _dbContext;
-    private readonly IConfiguration _configuration;
+    private readonly IStoreSettingsService _storeSettingsService;
 
-    public TaxService(ApplicationDbContext dbContext, IConfiguration configuration)
+    public TaxService(ApplicationDbContext dbContext, IStoreSettingsService storeSettingsService)
     {
         _dbContext = dbContext;
-        _configuration = configuration;
+        _storeSettingsService = storeSettingsService;
     }
 
     public async Task<Result<TaxRateDto>> CreateAsync(CreateTaxRateRequest request, CancellationToken cancellationToken = default)
@@ -173,13 +173,14 @@ public sealed class TaxService : ITaxService
             return new EstimatedTaxResult(0, false);
         }
 
-        var countryCode = _configuration["Store:DefaultTaxCountryCode"];
+        var storeSettings = await _storeSettingsService.GetAsync(cancellationToken);
+        var countryCode = storeSettings.DefaultTaxCountryCode;
         if (string.IsNullOrWhiteSpace(countryCode))
         {
             return new EstimatedTaxResult(0, false);
         }
 
-        var regionCode = _configuration["Store:DefaultTaxRegionCode"];
+        var regionCode = storeSettings.DefaultTaxRegionCode;
 
         var totalTax = 0m;
         var rateConfigured = false;
