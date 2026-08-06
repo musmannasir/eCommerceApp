@@ -347,6 +347,7 @@ public class ReturnServiceTests : IDisposable
 
     private static CreateOrderRequest StandardRequest(string userId, string idempotencyKey) => new(
         userId,
+        "customer@example.com",
         idempotencyKey,
         new AddressDto(1, "Home", "Jane Doe", "555-0100", "123 Main St", null, "Springfield", "CA", "90210", "US", true),
         AppliedPromotionId: null,

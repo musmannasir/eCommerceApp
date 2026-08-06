@@ -8,15 +8,18 @@ using ECommerceApp.Application.Common.Options;
 using ECommerceApp.Application.Finance;
 using ECommerceApp.Application.Inventory;
 using ECommerceApp.Application.Marketing;
+using ECommerceApp.Application.Notifications;
 using ECommerceApp.Application.Orders;
 using ECommerceApp.Application.Payments;
 using ECommerceApp.Application.Pricing;
 using ECommerceApp.Application.Reporting;
 using ECommerceApp.Application.Returns;
 using ECommerceApp.Application.Reviews;
+using ECommerceApp.Application.Security;
 using ECommerceApp.Application.Shipping;
 using ECommerceApp.Application.Storefront;
 using ECommerceApp.Application.Taxation;
+using ECommerceApp.Application.Users;
 using ECommerceApp.Application.Wishlist;
 using ECommerceApp.Infrastructure.Addresses;
 using ECommerceApp.Infrastructure.Carts;
@@ -29,6 +32,7 @@ using ECommerceApp.Infrastructure.HealthChecks;
 using ECommerceApp.Infrastructure.Identity;
 using ECommerceApp.Infrastructure.Inventory;
 using ECommerceApp.Infrastructure.Marketing;
+using ECommerceApp.Infrastructure.Notifications;
 using ECommerceApp.Infrastructure.Orders;
 using ECommerceApp.Infrastructure.Payments;
 using ECommerceApp.Infrastructure.Persistence;
@@ -41,6 +45,7 @@ using ECommerceApp.Infrastructure.Shipping;
 using ECommerceApp.Infrastructure.Storage;
 using ECommerceApp.Infrastructure.Storefront;
 using ECommerceApp.Infrastructure.Taxation;
+using ECommerceApp.Infrastructure.Users;
 using ECommerceApp.Infrastructure.Wishlist;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
@@ -79,6 +84,7 @@ public static class DependencyInjection
             .AddCheck<SqlServerHealthCheck>("sql-server", tags: new[] { "ready" });
 
         services.Configure<JwtSettings>(configuration.GetSection("Jwt"));
+        services.Configure<OutboxOptions>(configuration.GetSection("Outbox"));
 
         services
             .AddIdentity<ApplicationUser, IdentityRole>(options =>
@@ -103,6 +109,9 @@ public static class DependencyInjection
         services.AddScoped<IAuthService, AuthService>();
         services.AddScoped<RoleAndAdminSeeder>();
         services.AddSingleton<IEmailSender, DevEmailSender>();
+        services.AddScoped<IEmailNotificationService, EmailNotificationService>();
+        services.AddScoped<IOutboxProcessor, OutboxProcessor>();
+        services.AddHostedService<OutboxProcessingBackgroundService>();
 
         services.Configure<FileStorageOptions>(configuration.GetSection("FileStorage"));
         services.AddSingleton<IFileStorage, LocalFileStorage>();
@@ -132,6 +141,8 @@ public static class DependencyInjection
         services.AddScoped<IReturnService, ReturnService>();
         services.AddScoped<IFinanceService, FinanceService>();
         services.AddScoped<IReportingService, ReportingService>();
+        services.AddScoped<IUserManagementService, UserManagementService>();
+        services.AddScoped<IAuditLogService, AuditLogService>();
 
         return services;
     }

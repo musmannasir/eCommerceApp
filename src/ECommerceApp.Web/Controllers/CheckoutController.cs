@@ -3,6 +3,7 @@ using ECommerceApp.Application.Addresses;
 using ECommerceApp.Application.Carts;
 using ECommerceApp.Application.Carts.Models;
 using ECommerceApp.Application.Checkout;
+using ECommerceApp.Application.Notifications;
 using ECommerceApp.Application.Orders;
 using ECommerceApp.Application.Orders.Models;
 using ECommerceApp.Application.Payments.Models;
@@ -46,10 +47,12 @@ public class CheckoutController : Controller
     private readonly ICheckoutCalculationService _checkoutCalculationService;
     private readonly IOrderService _orderService;
     private readonly ICartOwnerAccessor _cartOwnerAccessor;
+    private readonly IOutboxProcessor _outboxProcessor;
 
     public CheckoutController(
         ICartService cartService, IAddressService addressService, IShippingService shippingService,
-        ICheckoutCalculationService checkoutCalculationService, IOrderService orderService, ICartOwnerAccessor cartOwnerAccessor)
+        ICheckoutCalculationService checkoutCalculationService, IOrderService orderService, ICartOwnerAccessor cartOwnerAccessor,
+        IOutboxProcessor outboxProcessor)
     {
         _cartService = cartService;
         _addressService = addressService;
@@ -57,6 +60,7 @@ public class CheckoutController : Controller
         _checkoutCalculationService = checkoutCalculationService;
         _orderService = orderService;
         _cartOwnerAccessor = cartOwnerAccessor;
+        _outboxProcessor = outboxProcessor;
     }
 
     [HttpGet("")]
@@ -265,8 +269,9 @@ public class CheckoutController : Controller
         var items = cart.Items.Where(i => i.IsAvailable).ToList();
         var payment = new ChargeRequest(cardNumber, cardholderName, expiryMonth, expiryYear, cvv, calculation.GrandTotal);
 
+        var customerEmail = User.FindFirstValue(ClaimTypes.Email) ?? string.Empty;
         var orderResult = await _orderService.CreateOrderAsync(
-            new CreateOrderRequest(UserId, idempotencyKey, address, checkoutInput.Value.AppliedPromotionId, shippingOption, items, calculation, payment),
+            new CreateOrderRequest(UserId, customerEmail, idempotencyKey, address, checkoutInput.Value.AppliedPromotionId, shippingOption, items, calculation, payment),
             cancellationToken);
 
         if (orderResult.IsFailure)
@@ -281,6 +286,14 @@ public class CheckoutController : Controller
         if (orderResult.Value.PaymentStatus == nameof(PaymentStatus.Succeeded))
         {
             await _cartService.ClearCartAsync(Owner, cancellationToken);
+
+            // The confirmation email was already durably enqueued atomically
+            // with the order itself (Milestone 15.2, OrderService.CreateOrderAsync) -
+            // this just tries to deliver it (and any other still-pending
+            // message) right away, guarded so a delivery failure here can
+            // never turn into a failed PlaceOrder response for an order that
+            // already succeeded.
+            await _outboxProcessor.ProcessPendingAsync(cancellationToken);
         }
 
         return RedirectToAction(nameof(Confirmation), new { orderNumber = orderResult.Value.OrderNumber });

@@ -15,4 +15,9 @@ public enum SecurityEventType
     RefreshTokenReuseDetected,
     Logout,
     LogoutAllSessions,
+    UserCreatedByAdmin,
+    UserRoleChanged,
+    UserActivated,
+    UserDeactivated,
+    UserUnlocked,
 }

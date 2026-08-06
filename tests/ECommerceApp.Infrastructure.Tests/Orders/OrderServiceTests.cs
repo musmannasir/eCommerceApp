@@ -2,6 +2,7 @@ using ECommerceApp.Application.Addresses.Models;
 using ECommerceApp.Application.Carts.Models;
 using ECommerceApp.Application.Checkout.Models;
 using ECommerceApp.Application.Inventory.Models;
+using ECommerceApp.Application.Notifications.Models;
 using ECommerceApp.Application.Orders.Models;
 using ECommerceApp.Application.Payments.Models;
 using ECommerceApp.Application.Shipping.Models;
@@ -9,6 +10,7 @@ using ECommerceApp.Application.Storefront.Models;
 using ECommerceApp.Domain.Catalog;
 using ECommerceApp.Domain.Common;
 using ECommerceApp.Domain.Inventory;
+using ECommerceApp.Domain.Notifications;
 using ECommerceApp.Domain.Orders;
 using ECommerceApp.Domain.Payments;
 using ECommerceApp.Infrastructure.Tests.Catalog;
@@ -62,6 +64,38 @@ public class OrderServiceTests : IDisposable
         // The order itself is still real and persisted - a declined charge
         // does not prevent the order from existing.
         result.Value.OrderNumber.Should().MatchRegex(@"^ORD-\d{6}$");
+    }
+
+    [Fact]
+    public async Task A_paid_order_enqueues_an_order_confirmation_outbox_message_atomically_with_the_order()
+    {
+        var request = StandardRequest("user-1", Guid.NewGuid().ToString("N"));
+
+        var result = await _harness.OrderService.CreateOrderAsync(request);
+
+        result.Value.Status.Should().Be(nameof(OrderStatus.Paid));
+
+        var message = _harness.DbContext.OutboxMessages.Should().ContainSingle().Subject;
+        message.Type.Should().Be(OutboxMessageType.OrderConfirmationEmail);
+        message.Status.Should().Be(OutboxMessageStatus.Pending);
+
+        var payload = System.Text.Json.JsonSerializer.Deserialize<OrderConfirmationEmailOutboxPayload>(message.PayloadJson)!;
+        payload.ToEmail.Should().Be("customer@example.com");
+        payload.Model.OrderNumber.Should().Be(result.Value.OrderNumber);
+        payload.Model.GrandTotal.Should().Be(117m);
+    }
+
+    [Fact]
+    public async Task A_declined_order_does_not_enqueue_an_order_confirmation_outbox_message()
+    {
+        var request = StandardRequest("user-1", Guid.NewGuid().ToString("N")) with
+        {
+            Payment = StandardPayment() with { CardNumber = "4000000000000002" },
+        };
+
+        await _harness.OrderService.CreateOrderAsync(request);
+
+        _harness.DbContext.OutboxMessages.Should().BeEmpty();
     }
 
     [Fact]
@@ -522,6 +556,7 @@ public class OrderServiceTests : IDisposable
 
     private static CreateOrderRequest StandardRequest(string userId, string idempotencyKey) => new(
         userId,
+        "customer@example.com",
         idempotencyKey,
         new AddressDto(1, "Home", "Jane Doe", "555-0100", "123 Main St", null, "Springfield", "CA", "90210", "US", true),
         AppliedPromotionId: null,

@@ -5,6 +5,7 @@ using ECommerceApp.Domain.Catalog;
 using ECommerceApp.Domain.Common;
 using ECommerceApp.Domain.Inventory;
 using ECommerceApp.Domain.Marketing;
+using ECommerceApp.Domain.Notifications;
 using ECommerceApp.Domain.Orders;
 using ECommerceApp.Domain.Payments;
 using ECommerceApp.Domain.Reviews;
@@ -87,6 +88,7 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser, IdentityR
     public DbSet<Shipment> Shipments => Set<Shipment>();
     public DbSet<Review> Reviews => Set<Review>();
     public DbSet<ReviewReport> ReviewReports => Set<ReviewReport>();
+    public DbSet<OutboxMessage> OutboxMessages => Set<OutboxMessage>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

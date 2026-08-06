@@ -1,6 +1,9 @@
 using ECommerceApp.Application.Auth.Models;
+using ECommerceApp.Application.Notifications.Models;
+using ECommerceApp.Domain.Notifications;
 using ECommerceApp.Infrastructure.Tests.TestSupport;
 using FluentAssertions;
+using Microsoft.EntityFrameworkCore;
 
 namespace ECommerceApp.Infrastructure.Tests.Security;
 
@@ -40,13 +43,19 @@ public class PasswordManagementTests : IAsyncLifetime
     [Fact]
     public async Task ForgotPassword_then_ResetPassword_with_the_issued_token_succeeds()
     {
-        var forgotResult = await _harness.AuthService.ForgotPasswordAsync(Email);
+        // The token never leaves ForgotPasswordAsync directly (Milestone
+        // 15.2) - it travels inside the enqueued outbox row's ResetLink, so
+        // the identity buildResetLink below lets the test recover the raw
+        // token from there instead.
+        var forgotResult = await _harness.AuthService.ForgotPasswordAsync(Email, token => token);
 
         forgotResult.IsSuccess.Should().BeTrue();
-        forgotResult.Value.Should().NotBeNullOrEmpty();
+
+        var token = await GetEnqueuedResetTokenAsync();
+        token.Should().NotBeNullOrEmpty();
 
         var resetResult = await _harness.AuthService.ResetPasswordAsync(
-            new ResetPasswordRequest(Email, forgotResult.Value!, "ResetStr0ng!Passw0rd"));
+            new ResetPasswordRequest(Email, token!, "ResetStr0ng!Passw0rd"));
 
         resetResult.IsSuccess.Should().BeTrue();
 
@@ -56,11 +65,18 @@ public class PasswordManagementTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task ForgotPassword_for_an_unknown_email_still_returns_success_with_no_token()
+    public async Task ForgotPassword_for_an_unknown_email_still_returns_success_but_enqueues_nothing()
     {
-        var result = await _harness.AuthService.ForgotPasswordAsync("nobody@example.com");
+        var result = await _harness.AuthService.ForgotPasswordAsync("nobody@example.com", token => token);
 
         result.IsSuccess.Should().BeTrue();
-        result.Value.Should().BeNull();
+        _harness.DbContext.OutboxMessages.Should().BeEmpty();
+    }
+
+    private async Task<string?> GetEnqueuedResetTokenAsync()
+    {
+        var message = await _harness.DbContext.OutboxMessages.SingleAsync(m => m.Type == OutboxMessageType.PasswordResetEmail);
+        var payload = System.Text.Json.JsonSerializer.Deserialize<PasswordResetEmailOutboxPayload>(message.PayloadJson);
+        return payload?.ResetLink;
     }
 }

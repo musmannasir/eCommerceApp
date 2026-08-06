@@ -97,6 +97,7 @@ public record OrderQuery
 /// </summary>
 public record CreateOrderRequest(
     string UserId,
+    string CustomerEmail,
     string IdempotencyKey,
     AddressDto Address,
     int? AppliedPromotionId,

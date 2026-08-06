@@ -4,11 +4,13 @@ using System.Threading.RateLimiting;
 using ECommerceApp.Application;
 using ECommerceApp.Application.Common.Interfaces;
 using ECommerceApp.Application.Common.Options;
+using ECommerceApp.Application.Notifications;
 using ECommerceApp.Application.Storefront;
 using ECommerceApp.Domain.Security;
 using ECommerceApp.Infrastructure;
 using ECommerceApp.Infrastructure.Security;
 using ECommerceApp.Web.Middleware;
+using ECommerceApp.Web.Notifications;
 using ECommerceApp.Web.Services;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
@@ -47,6 +49,10 @@ try
     builder.Services.AddScoped<ICurrentUserService, CurrentUserService>();
     builder.Services.AddScoped<IRecentlyViewedService, RecentlyViewedService>();
     builder.Services.AddScoped<ICartOwnerAccessor, CartOwnerAccessor>();
+
+    // Needs the Web layer's Razor view engine (Views/Emails/*.cshtml), so it's
+    // registered here rather than alongside AddInfrastructure()'s other services.
+    builder.Services.AddScoped<IEmailTemplateRenderer, RazorEmailTemplateRenderer>();
 
     builder.Services.AddProblemDetails();
     builder.Services.AddExceptionHandler<ApiExceptionHandler>();

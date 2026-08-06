@@ -33,11 +33,14 @@ public interface IAuthService
     Task<Result> ChangePasswordAsync(ChangePasswordRequest request, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Always returns a success <see cref="Result{T}"/> to avoid leaking whether the email is
-    /// registered; the token value is null when there is no matching active account, and the
-    /// caller must show the same generic message either way and only send an email when non-null.
+    /// Always returns success to avoid leaking whether the email is registered - the caller must
+    /// show the same generic message either way. When a matching active account exists, generates
+    /// a reset token, builds the reset link via <paramref name="buildResetLink"/> (kept a caller
+    /// callback since only the Web layer can build a URL), and enqueues a password-reset email on
+    /// the transactional outbox (Milestone 15.2) atomically with this call's own audit event -
+    /// there is no token for the caller to receive directly, since it never leaves this method.
     /// </summary>
-    Task<Result<string?>> ForgotPasswordAsync(string email, CancellationToken cancellationToken = default);
+    Task<Result> ForgotPasswordAsync(string email, Func<string, string> buildResetLink, CancellationToken cancellationToken = default);
 
     Task<Result> ResetPasswordAsync(ResetPasswordRequest request, CancellationToken cancellationToken = default);
 

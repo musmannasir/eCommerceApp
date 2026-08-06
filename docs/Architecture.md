@@ -2343,6 +2343,451 @@ whatever date range is currently being viewed.
 Top Selling Products report, and all three CSV exports all matched a
 direct SQL `GROUP BY` query exactly. This closes out Milestone 14 in full.
 
+## Email abstraction & templates (Milestone 15.1)
+
+**Same brief-text gap as Milestones 6.1-14.3** - scope was agreed with the
+user as a concrete reading of the milestone name, researched first the same
+way Milestone 14.3 was.
+
+**`IEmailSender`/`DevEmailSender` already existed, unchanged since
+Milestone 1.** `DevEmailSender` writes the rendered email to
+`Logs/DevEmails` as an HTML file instead of delivering it, and deliberately
+never goes through `ILogger`/Serilog so tokens/links never reach the
+structured application log. Its only real call site was
+`AccountController.ForgotPassword`, building the email body as a raw
+interpolated C# string - no templating mechanism existed anywhere in the
+app, and `Views/Checkout/Confirmation.cshtml` had said "A confirmation
+email arrives in a later milestone" since Milestone 9.
+
+**Two new pieces complete the abstraction, split across layers by what
+they actually need.** `IEmailTemplateRenderer` (`Application.Notifications`)
+renders a named template + strongly-typed model to an HTML string - a
+UI-agnostic interface, but its only sensible *implementation* needs
+`IRazorViewEngine`, which is a Web-layer/MVC concern Infrastructure has no
+business depending on. `RazorEmailTemplateRenderer` (`Web.Notifications`)
+implements it using ASP.NET Core's own "render a Razor view to string"
+technique (`IRazorViewEngine.GetView` + a manually-built `ViewContext`,
+rendering into a `StringWriter`) against new `Views/Emails/PasswordReset.cshtml`
+and `Views/Emails/OrderConfirmation.cshtml` templates - no third-party
+templating library, the same "no new dependency without strong
+justification" call already made in Milestone 14.2 (no charting library)
+and 14.3 (hand-rolled CSV writer). Both templates set `Layout = null`
+explicitly, since `Views/_ViewStart.cshtml` would otherwise wrap them in
+the site's Bootstrap layout. Because DI composition happens at the
+outermost layer regardless of which layer declares the interface,
+`RazorEmailTemplateRenderer`'s registration lives in `Program.cs`, not
+`AddInfrastructure()` - the one place in this milestone where a Web-owned
+concrete type is wired up outside the Infrastructure layer's own
+`DependencyInjection.cs`.
+
+`IEmailNotificationService`/`EmailNotificationService`
+(`Application.Notifications` / `Infrastructure.Notifications`) is the
+business-facing API - `SendPasswordResetEmailAsync`,
+`SendOrderConfirmationEmailAsync` - composing `IEmailTemplateRenderer` and
+`IEmailSender` so callers build neither HTML nor an email body themselves.
+It lives in Infrastructure like every other composing service in this app,
+depending only on the two Application-defined interfaces; it has no direct
+dependency on Razor/MVC types itself.
+
+**The two consumers wired up are the ones actually evidenced in the
+codebase, nothing more.** `AccountController.ForgotPassword` now calls
+`SendPasswordResetEmailAsync` instead of building its own HTML string.
+`CheckoutController.PlaceOrder` now calls `SendOrderConfirmationEmailAsync`
+right after a successful charge - gated on `PaymentStatus.Succeeded`, the
+same "actually charged" condition Invoice (Milestone 11.2) already uses -
+filling the gap `Confirmation.cshtml` explicitly flagged. It's only
+reached on the branch that just placed a brand-new order, not the
+idempotent-replay early-return at the top of `PlaceOrder`, so a
+double-click or retried submission with the same idempotency key never
+sends a duplicate email. Shipped/delivered/return/refund emails were
+**not** added - nothing else in the codebase flagged them as deferred, so
+adding them would have been scope creep beyond "email abstraction &
+templates."
+
+**Real SMTP delivery is deliberately not built here.**
+`DevEmailSender`'s own doc comment anticipated being "replaced by a real
+SMTP sender in Milestone 15," but this environment has no real SMTP
+account to send through - the same reasoning `SimulatedPaymentGateway`
+(Milestone 9.2) already established for not calling a real payment
+processor. The doc comment was updated to say so explicitly rather than
+left stale and misleading; `IEmailSender`'s existing abstraction boundary
+means a real sender could still be dropped in later without touching any
+caller.
+
+**Integration tests check the real rendered output, not a mock.**
+`NotificationFlowTests` drives the actual HTTP forms/checkout flow and
+then reads the real HTML file `DevEmailSender` wrote to
+`Logs/DevEmails/*.html` - `WebApplicationFactory` hosts the app
+in-process, so `Directory.GetCurrentDirectory()` resolves identically in
+the test and the app under test. This exercises the real Razor template
+rendering pipeline end to end (unlike mocking `IEmailSender`, which would
+only prove the controller called it) at the cost of being a slightly
+unusual integration-test pattern for this codebase - the trade-off was
+judged worth it since template rendering is exactly what this milestone
+added.
+
+**Manually verified** against the real dev database: requesting a
+password reset as the seeded SuperAdmin wrote a correctly-rendered
+template with a working reset link to `Logs/DevEmails`, and placing and
+paying for a real order (`ORD-000010`) wrote a correctly-rendered
+order-confirmation email with the right items/subtotal/tax/shipping/total
+- both confirmed by reading the actual HTML files on disk, not just the
+HTTP response.
+
+## Transactional outbox (Milestone 15.2)
+
+**Same brief-text gap as Milestones 6.1-15.1** - scope was agreed with the
+user as a concrete reading of the milestone name, researched first the same
+way Milestone 15.1 was.
+
+**The motivating gap was real, not hypothetical.** `OrderService.CreateOrderAsync`
+commits the `Order`/`Payment` rows in its own database transaction. Milestone
+15.1 then sent the order-confirmation email *after* that call returned,
+unguarded, from `CheckoutController.PlaceOrder`. If `IEmailNotificationService`
+had thrown for any reason (a disk error, a bad template), the customer would
+have seen an unhandled exception on `PlaceOrder` despite their order and
+charge having already genuinely succeeded - the send-reliability of an
+unrelated side effect was coupled to the success of the request that
+triggered it. The transactional outbox pattern exists specifically to break
+that coupling.
+
+**`OutboxMessage` (`Domain.Notifications`) is a durable "intent to send"
+row**, written by the *same* `SaveChangesAsync` call that persists the
+business change it's about - never a separate one. It derives from
+`AuditableEntity` rather than the immutable-ledger pattern `Payment`/`Refund`
+use, the same reasoning `InventoryReservation`'s own doc comment gives: this
+row has a real Pending -> Processed/Failed lifecycle and gets updated in
+place as delivery is attempted, unlike a pure "write once, never touch
+again" ledger entry.
+
+**Enqueueing happens directly against each service's own `ApplicationDbContext`
+- no new interface for the write side.** `OrderService.CreateOrderAsync` adds
+an `OutboxMessage` row (via `_dbContext.OutboxMessages.Add(...)`) right before
+its own final `SaveChangesAsync` call, but only on the branch where
+`chargeResult.Succeeded` - so a declined or stock-failed order never gets a
+confirmation queued for it, and a genuinely paid order's `Order`/`Payment`/
+`OutboxMessage` rows all commit or roll back together. `AuthService.ForgotPasswordAsync`
+does the same, enqueueing atomically with its own `SecurityAuditEvent` write.
+Both already touched their own `ApplicationDbContext` directly and already
+called `SaveChangesAsync` at the point the outbox row needed to be added, so
+this needed no repository abstraction - consistent with this app's
+established "services query `ApplicationDbContext` directly" convention.
+
+**`IAuthService.ForgotPasswordAsync`'s signature changed shape.** It used to
+return `Result<string?>` - the raw token, or null - and let `AccountController`
+build the reset link and send the email itself. Now it takes a
+`Func<string, string> buildResetLink` callback (still only the Web layer can
+build a URL via `Url.Action`) and returns plain `Result`, since the token
+never leaves the method anymore - it's baked into the enqueued
+`PasswordResetEmailOutboxPayload.ResetLink` before `AuthService` even returns.
+Tests that previously read the token off the result now read it back out of
+the enqueued outbox row's payload instead (an identity `buildResetLink`
+in those tests, i.e. `token => token`).
+
+**`CreateOrderRequest` gained `CustomerEmail`.** `OrderService` needs the
+recipient address to build the confirmation payload, but has no Identity
+dependency of its own (`ApplicationUser` lives in `Infrastructure.Identity`,
+and pulling it into `OrderService` for this alone would be a needless new
+coupling) - `CheckoutController` already resolves the signed-in customer's
+email via the `ClaimTypes.Email` claim (the same one `AuthService` issues at
+login), so it's passed in already-resolved, the same "everything needed is
+already resolved and validated by the time PlaceOrder calls this" convention
+`CreateOrderRequest`'s own doc comment already establishes for its other
+fields.
+
+**`IOutboxProcessor`/`OutboxProcessor` (`Infrastructure.Notifications`) is the
+read/dispatch side.** `ProcessPendingAsync` reads up to 20 Pending rows
+(oldest first), and for each: deserializes the type-specific payload record
+and calls the matching `IEmailNotificationService` method from Milestone
+15.1 unchanged. A per-message failure is caught individually - incrementing
+`Attempts`/`LastError` on that row alone, marking it terminally `Failed`
+once it reaches 5 attempts - and never allowed to break another message in
+the same batch or bubble up to whatever request called `ProcessPendingAsync`,
+since that request's own business transaction had already committed
+successfully by the time this runs. This is a deliberately broad `catch
+(Exception)` - normally a smell in this codebase, but here it's exactly the
+safety boundary the milestone exists to build.
+
+**Still not a background job - that's explicitly Milestone 15.3's name.**
+`AccountController.ForgotPassword` and `CheckoutController.PlaceOrder` each
+call `IOutboxProcessor.ProcessPendingAsync()` right after their own request
+finishes enqueueing something, so delivery still happens promptly today
+(unchanged from Milestone 15.1's user-visible behavior - `Logs/DevEmails`
+still gets a file written within the same request). What Milestone 15.2 adds
+is durability underneath that: the enqueue is now atomic with the business
+change, a delivery failure can't break the triggering request, and a
+still-Pending row survives to be retried - by a later request that happens
+to call `ProcessPendingAsync` again today, and by a real recurring worker
+once Milestone 15.3 builds one. `ProcessPendingAsync` sweeping *every*
+Pending row (not just whatever the current request just enqueued) is a
+deliberate, free byproduct of this design - any row left behind by an
+earlier hiccup gets an opportunistic retry the next time anyone calls it.
+
+**Integration tests were extended, not rewritten.** `NotificationFlowTests`
+(Milestone 15.1) still drives the same real HTTP flows and reads the same
+`Logs/DevEmails` output with the exact same assertions as before - proof
+that the outbox rework is purely an internal durability layer with no
+user-visible behavior change - with new `OutboxMessage`-row assertions
+(status reaches `Processed`, or never gets created for a declined order)
+added alongside them.
+
+**Manually verified** against the real dev database: requesting a password
+reset and placing and paying for a real order (`ORD-000011`) each wrote an
+`OutboxMessages` row that reached `Processed` status (confirmed via direct
+SQL query against the real table) alongside the correctly-rendered email
+file in `Logs/DevEmails` - both layers working together as designed.
+
+## Background jobs (Milestone 15.3)
+
+**Same brief-text gap as Milestones 6.1-15.2** - scope was agreed with the
+user as a concrete reading of the milestone name, researched first the same
+way Milestone 15.2 was. This closes out Milestone 15 in full (15.1 Email
+abstraction & templates, 15.2 Transactional outbox, 15.3 Background jobs).
+
+**Milestone 15.2's own doc comments already named this gap.** `IOutboxProcessor.ProcessPendingAsync`
+was, until now, only ever called synchronously from `AccountController`/
+`CheckoutController` right after their own request enqueued something. A
+message left `Pending` - a crashed request that never reached the
+`ProcessPendingAsync` call, or a transient send failure still under the
+5-attempt retry cap - had no way to get picked up again unless some *other*
+matching request happened to come in later. That's a real, not
+hypothetical, reliability gap for a durability mechanism to have.
+
+**`OutboxProcessingBackgroundService` (`Infrastructure.Notifications`) is a
+plain ASP.NET Core `BackgroundService`** (`Microsoft.Extensions.Hosting`,
+already part of the framework - no new dependency, the same "no new
+dependency without strong justification" call made repeatedly since
+Milestone 14.2). It runs a sweep immediately on startup - catching anything
+left over from before a restart - then loops on a configurable interval.
+Each pass creates its own DI scope (`IServiceScopeFactory.CreateScope()`)
+to resolve the scoped `IOutboxProcessor`, since the background service
+itself is registered as a singleton hosted service but everything it calls
+(`ApplicationDbContext`, `IEmailNotificationService`) is scoped.
+
+**New `OutboxOptions` (`Application.Common.Options`)** binds the `"Outbox"`
+configuration section (`PollingIntervalSeconds`, default 30), following the
+exact `IOptions<T>` pattern `JwtSettings`/`FileStorageOptions` already
+established rather than reading `IConfiguration` ad hoc.
+
+**The request-time `ProcessPendingAsync()` calls from Milestone 15.2 were
+deliberately kept alongside the new background sweep, not replaced by it.**
+Removing them would mean every email now waits for the next polling tick
+instead of appearing immediately - a real UX regression from Milestone
+15.1's established behavior, for no corresponding benefit. The background
+service exists specifically to catch what request-time processing
+structurally cannot: work left behind when there was no matching follow-up
+request at all. `ProcessPendingAsync` sweeping *every* Pending row (not
+just what the current pass is "responsible for") - already true since
+Milestone 15.2 - means the background service and any concurrent
+request-triggered call naturally cooperate rather than duplicate work;
+whichever runs first for a given message wins, and the other finds nothing
+left to do.
+
+**A processing-pass failure is caught inside the service's own loop and
+logged, never left to propagate.** By default, an unhandled exception
+escaping a `BackgroundService.ExecuteAsync` stops the *entire* application
+host - not just that one background task - so a transient database blip
+during a scheduled sweep could otherwise take the whole site down. This
+mirrors the exact reasoning `Program.cs` already applies to role/admin
+seeding failures at startup ("the app will keep starting... run `dotnet ef
+database update` and restart once the database is ready") - catch it, log
+it, keep going, retry next time.
+
+**Testing a timer-driven background service needed a different shape than
+the rest of this app's tests.** `OutboxProcessingBackgroundServiceTests`
+constructs the service directly against a `FakeOutboxProcessor` and a
+minimal DI container (just enough to resolve `IServiceScopeFactory`), then
+uses real elapsed time with short (1-second-floor) configured intervals and
+a `Task.Delay` in the test itself - the only place in this codebase's test
+suite that waits on wall-clock time rather than driving everything through
+a `FakeClock`, since the class under test IS the thing that decides when to
+wake up.
+
+**Manually verified** against the real dev database, with
+`Outbox:PollingIntervalSeconds` temporarily set to 5 in
+`appsettings.Development.json` for the verification (reverted immediately
+after): inserted a `Pending` `OutboxMessage` row directly via SQL -
+deliberately bypassing every code path that would otherwise call
+`ProcessPendingAsync`, to prove only the background service could have
+picked it up - and confirmed via a second SQL query that it reached
+`Processed` within one polling interval, with the corresponding rendered
+email appearing in `Logs/DevEmails` at a matching timestamp.
+
+## User management (Milestone 16.1)
+
+**Same brief-text gap as Milestones 6.1-15.3** - scope was agreed with the
+user as a concrete reading of the milestone name, researched first the same
+way Milestone 15.3 was.
+
+**Two pieces had existed since Milestone 1, unused.** `Policies.CanManageUsers`
+(`SuperAdmin`/`Admin`) was declared and role-mapped in `Program.cs` but
+never referenced by any `[Authorize]` attribute - the exact "defined but
+dormant" state `CanViewFinancialReports`/`CanProcessRefunds` were in before
+Milestone 14.1. `ApplicationUser.IsActive` existed as "a separate,
+admin-controlled permanent disable switch" (its own doc comment's words)
+alongside Identity's built-in temporary lockout, but nothing ever set it
+after account creation. A disabled `<span>` reading "Customers" had sat in
+`_AdminLayout.cshtml`'s sidebar since Milestone 4.1 - the same
+forward-reference placeholder pattern "Reports" (Milestone 14.3) and
+"Settings" (still disabled, Milestone 16.3's job) use. It's now enabled and
+renamed to **"Users"**, since this screen manages staff role assignment
+too, not just retail customers.
+
+**`IUserManagementService` is deliberately separate from `IAuthService`.**
+`IAuthService` is entirely self-service - register, log in, change your own
+password, forgot/reset password - acting on the calling user's own
+identity. `IUserManagementService` is admin-facing: it acts on *someone
+else's* account, and every state-changing method takes the acting admin's
+own user id, both to guard against self-lockout and to record who made the
+change. This mirrors the split this app already draws elsewhere (e.g.
+`CancelAsync`/`CancelOwnOrderAsync`) between an admin-scoped operation and
+a self-scoped one, just pulled into two whole interfaces instead of two
+methods, since almost nothing on the admin side is a self-service action.
+
+**Roles stay single-assignment, matching this app's own existing
+convention.** ASP.NET Core Identity supports a user holding multiple
+roles, but nothing in this codebase ever has - registration always assigns
+exactly `Roles.Customer`, and seeding assigns exactly `Roles.SuperAdmin`.
+`UserManagementService.UpdateAsync` preserves that: changing a user's role
+removes every role they currently hold and adds the one selected, rather
+than offering a multi-select. This is a deliberate simplification, not an
+oversight - a multi-role UI would be solving a problem nothing in this app
+has.
+
+**The user list joins `UserRoles`/`Roles` once, then filters/paginates in
+memory** - the same "materialize then process" approach `FinanceService.GetLedgerAsync`
+(Milestone 14.1) established, so results are identical across the EF Core
+InMemory (unit tests) and SQL Server (real) providers. A per-user
+`UserManager.GetRolesAsync` call (N+1) would have been simpler code but
+doesn't fit a *list* query across every registered user (which, unlike
+every other admin list in this app, realistically includes every retail
+customer, not just a handful of staff/catalog/inventory rows) - the single
+join avoids that without adding real complexity. `GetByIdAsync`/`CreateAsync`/
+`UpdateAsync`, by contrast, operate on one user at a time, so they use
+`UserManager.GetRolesAsync` directly - the simpler, idiomatic Identity API,
+appropriate once N+1 isn't a concern.
+
+**Self-action guards are enforced twice: server-side (authoritative) and in
+the UI (so the mistake is never attempted in the first place).**
+`DeactivateAsync` rejects `userId == actingAdminUserId` outright.
+`UpdateAsync` only rejects a self role-*change* - editing your own name
+through this screen is harmless and still allowed, so the guard compares
+the incoming role against the user's current role rather than blocking the
+whole action. `UsersController.Edit`'s view model carries an `IsSelf` flag
+that disables the role `<select>` and the Deactivate button and shows an
+explanatory banner, so an admin editing their own account sees the
+constraint before submitting, not just as a server-side rejection after
+the fact.
+
+**"Send password reset" is not a new email flow - it's Milestone 15's
+existing one, invoked on someone else's behalf.** `UsersController` injects
+the same `IAuthService`/`IOutboxProcessor` pair `AccountController.ForgotPassword`
+already uses and calls them identically (`ForgotPasswordAsync` with a
+`buildResetLink` callback, then `ProcessPendingAsync`) - no parallel
+implementation, no new outbox message type. The only difference is who
+clicked the button.
+
+**No audit-log viewer was built.** Every state-changing method writes a new
+`SecurityAuditEvent` (new `SecurityEventType` values -
+`UserCreatedByAdmin`/`UserRoleChanged`/`UserActivated`/`UserDeactivated`/
+`UserUnlocked` - reusing `AuthService`'s own `AddAuditEvent`-then-`SaveChangesAsync`
+pattern), extending the *write* side of a mechanism that's existed since
+Milestone 1. Nothing in this app currently *reads* `SecurityAuditEvent` -
+that's Milestone 16.2 ("Audit logging") by name, and building a viewer here
+would have been scope creep into the very next milestone.
+
+**No hard delete.** `ApplicationUser` derives from `IdentityUser`, not this
+app's `BaseEntity`/`AuditableEntity`, so it has no `IsDeleted` and no
+recycle-bin convention to mirror. `IsActive` is the correct, already-designed
+"remove access" mechanism - deleting an account outright would orphan every
+`UserId` string reference elsewhere in the app (`Order.UserId`, `Address.UserId`,
+`Review`, etc. - none of which are enforced FKs to `AspNetUsers`, per their
+own existing doc comments), which soft-disabling avoids entirely.
+
+**Manually verified** against the real dev database: created a new
+`OrderManager` account through the admin UI and logged into it
+immediately, changed its role to `CustomerSupport`, deactivated it and
+confirmed the very next login attempt failed with the same generic
+"Invalid email or password" message every other auth failure uses (with a
+real `LoginFailure`/"Account disabled." row appearing from the
+*pre-existing* `AuthService.ValidateCredentialsAsync` gate - proof the two
+systems are genuinely wired together, not just visually consistent),
+reactivated it and confirmed login worked again, confirmed the SuperAdmin's
+own Edit page disables the role dropdown and Deactivate button with an
+explanatory banner, and triggered "Send password reset" on the SuperAdmin's
+own account, confirming a real `OutboxMessage` row reached `Processed` with
+a matching rendered email in `Logs/DevEmails`. The full
+`UserCreatedByAdmin` -> `UserRoleChanged` -> `UserDeactivated` audit trail
+was confirmed via direct SQL query against the real `SecurityAuditEvents`
+table.
+
+## Audit logging (Milestone 16.2)
+
+**Same brief-text gap as Milestones 6.1-16.1** - scope was agreed with the
+user as a concrete reading of the milestone name, researched first the same
+way Milestone 16.1 was.
+
+**This milestone is purely a read-side viewer over a write mechanism that
+already existed.** `SecurityAuditEvent`/`SecurityEventType` have been in
+the codebase since Milestone 1 - `AuthService` has written to them from
+every auth-flow method all along, and Milestone 16.1's `UserManagementService`
+extended the same pattern for admin user actions. Nothing anywhere ever
+queried them back out. `IAuditLogService`/`AuditLogService` adds exactly
+that, and nothing else - no new `SecurityEventType` values, no new
+audit-writing call sites.
+
+**Deliberately not expanded to cover other domains.** "Audit logging" could
+in principle mean adding an audit trail to catalog edits, order-status
+changes, return approvals, and so on - none of which are recorded anywhere
+today. That's a materially larger, more speculative undertaking than what
+"logging" alone implies, and `SecurityAuditEvent`'s own existing doc
+comment ("an immutable *security* audit log entry") already draws the
+boundary this milestone respects: security/account events only, the same
+scope the entity has had since it was introduced.
+
+**Gated by `CanManageUsers`, not a new policy.** The log is predominantly
+about user/account security actions (logins, registrations, password
+resets, and now the Milestone 16.1 admin actions), so it stays at the same
+SuperAdmin/Admin tier as the Users screen itself - the same reasoning
+`LedgerController` already used to justify `CanViewFinancialReports` over
+the broader `CanManageOrders` for a similarly sensitive detailed feed.
+
+**The date range defaults to the 30 days ending today**, the exact
+convention `FinanceService.GetCashFlowAsync` (Milestone 14.2) established -
+`SecurityAuditEvents` accumulates far faster than `Payment`/`Refund` rows
+(every login attempt, not just every order), so an unbounded default view
+would grow unusably large over time in a way the Ledger's own
+un-date-ranged default never does.
+
+**`UserId` is resolved to an email via one non-correlated lookup, not a
+per-row join or a correlated subquery.** `AuditLogService.BuildMatchingEntriesAsync`
+applies the simple, provider-translatable filters (event type, succeeded,
+date range) directly against `SecurityAuditEvents`, materializes that
+result, then resolves the distinct `UserId`s it actually needs against
+`AspNetUsers` in one query - the same "materialize then process" approach
+`FinanceService.GetLedgerAsync` (Milestone 14.1) established, keeping
+results identical across the EF Core InMemory (unit tests) and SQL Server
+(real) providers. Search-by-email and pagination both happen after that
+resolution, since email isn't a column on `SecurityAuditEvent` itself. A
+`null` `UserId` (an anonymous failed-login attempt against an unknown
+email, for instance) resolves to a `null` email rather than being
+excluded - the row itself is still real signal worth seeing.
+
+**CSV export mirrors the exact same filters as the current view**, the
+same "export whatever's currently filtered" precedent `CashFlowExportCsv`/
+`TopSellingProductsExportCsv` (Milestone 14.3) already set, rather than an
+unbounded full-history export - an audit log export is typically "give me
+the failed logins in this date range," not the entire table.
+
+**Manually verified** against the real dev database: the log correctly
+displayed the real historical events accumulated across this session
+(logins/logouts throughout, plus Milestone 16.1's full
+`UserCreatedByAdmin` -> `UserRoleChanged` -> `UserDeactivated` ->
+`LoginFailure`("Account disabled.") -> `UserActivated` trail for the test
+account created there), filtering by event type and by user email both
+narrowed the results correctly, and the CSV export returned real content
+matching whatever filter was applied.
+
 ## Framework version note
 
 The brief fixes the stack at **.NET 8**. This machine has only the **.NET 10**

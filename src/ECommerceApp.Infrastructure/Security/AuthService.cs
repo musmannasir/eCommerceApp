@@ -2,11 +2,14 @@ using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.Json;
 using ECommerceApp.Application.Auth;
 using ECommerceApp.Application.Auth.Models;
 using ECommerceApp.Application.Common.Interfaces;
 using ECommerceApp.Application.Common.Options;
+using ECommerceApp.Application.Notifications.Models;
 using ECommerceApp.Domain.Common;
+using ECommerceApp.Domain.Notifications;
 using ECommerceApp.Domain.Security;
 using ECommerceApp.Infrastructure.Identity;
 using ECommerceApp.Infrastructure.Persistence;
@@ -303,20 +306,30 @@ public sealed class AuthService : IAuthService
         return Result.Success();
     }
 
-    public async Task<Result<string?>> ForgotPasswordAsync(string email, CancellationToken cancellationToken = default)
+    public async Task<Result> ForgotPasswordAsync(string email, Func<string, string> buildResetLink, CancellationToken cancellationToken = default)
     {
         var user = await _userManager.FindByEmailAsync(email);
-        string? token = null;
 
         if (user is not null && user.IsActive)
         {
-            token = await _userManager.GeneratePasswordResetTokenAsync(user);
+            var token = await _userManager.GeneratePasswordResetTokenAsync(user);
+            var payload = new PasswordResetEmailOutboxPayload(email, buildResetLink(token));
+
+            // Enqueued on the same DbContext, committed by the same SaveChangesAsync
+            // call below as the audit event - the outbox row and "a reset was
+            // requested" are atomic (Milestone 15.2).
+            _dbContext.OutboxMessages.Add(new OutboxMessage
+            {
+                Type = OutboxMessageType.PasswordResetEmail,
+                PayloadJson = JsonSerializer.Serialize(payload),
+                CreatedAtUtc = _clock.UtcNow,
+            });
         }
 
         AddAuditEvent(user?.Id, SecurityEventType.PasswordResetRequested, succeeded: user is not null);
         await _dbContext.SaveChangesAsync(cancellationToken);
 
-        return Result.Success(token);
+        return Result.Success();
     }
 
     public async Task<Result> ResetPasswordAsync(ResetPasswordRequest request, CancellationToken cancellationToken = default)
