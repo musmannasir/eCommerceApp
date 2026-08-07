@@ -1,6 +1,6 @@
 # Customer User Guide
 
-## What you can do today (after Milestone 7.3)
+## What you can do (complete, as of Milestone 18.1)
 
 - **Create an account**: go to *Register*, fill in your name/email/password.
   You're signed in immediately afterward. If you had anything in your cart
@@ -24,9 +24,10 @@
   and discounted products (all admin-managed or drawn from real catalog
   data - see `Admin-User-Guide.md`'s Marketing section for how banners are
   configured), plus a **Recently viewed** section once you've looked at a
-  product. "Best sellers" and "Recommended for you" are still placeholders
-  for now - they need order history from a later milestone, or (for a
-  home-page recommendation) a signal the store doesn't have yet.
+  product. "Best sellers" and "Recommended for you" are permanent
+  placeholders on the home page - real order history exists (see "Your
+  orders" below), but nothing ranks by it here, and a home-page
+  recommendation has no specific product to anchor itself to.
 - **Category pages** (linked from the header nav or a featured-category
   card): shows every product in that category, including its subcategories.
 - **Brand pages**: linked from any product card's brand name, or from the
@@ -43,9 +44,9 @@
   AND Blue") and stay in the page's URL, so a filtered link can be bookmarked
   or shared. A "Clear filters" link resets them.
 - **Sorting**: relevance (search results), newest, price (low-to-high or
-  high-to-low), biggest discount, or name (A-Z or Z-A). Sorting by rating or
-  "best selling" isn't available yet - the store doesn't have reviews or
-  order history to sort by until later milestones.
+  high-to-low), biggest discount, or name (A-Z or Z-A). Sorting by rating
+  or "best selling" isn't offered - a deliberate scope decision, not a gap
+  waiting to be filled (see "Best sellers" above).
 - **All of the above**: switch between grid and list view, page through
   results, and clear the current category/brand/search filter with the "×"
   next to its label if you want to go back to browsing everything.
@@ -75,16 +76,21 @@ Click any product card to open its detail page:
   requires an account (unlike Cart, which works for guests too); if you're
   not signed in, it takes you to the login page first.
 - **Description, Specifications, Warranty/Returns/Shipping, Reviews** tabs.
-  Reviews aren't built yet (Milestone 12), so that tab says so honestly
-  rather than showing fake ratings.
+  The Reviews tab shows the average rating, a star display, and every
+  written review; **Write a review** lets you rate (1-5 stars) and describe
+  the product once you're signed in, one review per product per account.
+  A review you've bought and had delivered is marked **Verified Purchase**
+  automatically - you can't claim that status yourself, and it's checked
+  against your real order history. If you see a review that shouldn't be
+  there, **Report** it (with a reason) to flag it for staff.
 - **Related products**: other products picked for you based on category,
   brand, shared tags, and similar price - not just "same category" anymore.
 - **Recently viewed**: products you've looked at, most recent first, shown
   further down the page and on the home page. Signed out, this is remembered
   in a cookie on your device for 90 days; signed in, it's tied to your
   account instead, so it follows you between devices.
-- "Frequently bought together" is still a placeholder - it needs real order
-  history (Milestone 9) that doesn't exist yet.
+- "Frequently Bought Together" is a permanent placeholder - it was never
+  wired up to real order data.
 
 ### Your Cart
 
@@ -135,7 +141,7 @@ have anything in it) to see everything you've added:
 - **Estimated total**: when tax and/or shipping estimates are shown, you'll
   also see an "Estimated total" line - your Total plus estimated tax and
   shipping, all in one number. Still just a preview, same as its parts.
-- **Checkout** isn't available yet - that arrives in a later milestone.
+- **Checkout** - see "Checking out" below.
 
 ### Your Wishlist
 
@@ -206,5 +212,36 @@ marked accordingly, naming what ran out - adjust the quantity in your cart
 and check out again. If your card was declined, you'll also see a real
 order number - the order was placed - but marked as payment failed, with
 the reason why; your cart is left exactly as it was so you can go back and
-check out again with a different card. **A confirmation email arrives in a
-later milestone.**
+check out again with a different card. If the order was actually charged,
+a confirmation email is sent to your account's email address.
+
+### Your orders
+
+Click **Your orders** (or your profile page's order history link) to see
+"Your orders": a total-orders/total-spent summary and a paged table of
+every order you've placed, each with a **View** link.
+
+- **Order detail**: a status timeline (Placed/Paid/Shipped/Delivered, or
+  the payment-failed/stock-issue/cancelled outcome), your shipping address
+  and method, a payment summary, and every line item with its price and
+  quantity. Once your order ships, a **Tracking** card appears with the
+  carrier and tracking number.
+- **Print invoice**: available once your order has actually been charged.
+- **Reorder these items**: adds everything from that order back into your
+  cart in one click, so you don't have to find each product again -
+  available regardless of the order's status, even a cancelled one.
+- **Cancel order**: available while your order is still just Paid (not yet
+  shipped). This releases the stock that was reserved for you but does
+  **not** issue a refund - if you were charged and want your money back
+  after cancelling, use a return request instead (see below).
+- **Request a return**: available once your order has been marked
+  Delivered, and only if you don't already have an open return request for
+  it. Pick a reason (Defective, Wrong item, No longer needed, Not as
+  described, Other) and add a comment if you'd like. Once submitted, the
+  order detail page shows your request's status - staff review it and
+  either approve or reject it; if approved and you ship the item(s) back,
+  staff confirm receipt and your refund is issued automatically at that
+  point, with the affected stock restocked. There's no shipping label or
+  day-count return window built into the app - approval is based purely on
+  the order having been delivered, and getting the item back to the seller
+  is handled outside the app for now.

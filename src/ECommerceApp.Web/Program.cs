@@ -14,6 +14,7 @@ using ECommerceApp.Web.Middleware;
 using ECommerceApp.Web.Notifications;
 using ECommerceApp.Web.Services;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.RateLimiting;
@@ -36,9 +37,39 @@ try
         .Enrich.FromLogContext()
         .Enrich.WithMachineName());
 
+    // The framework default (5s) can cut off a request that's mid-flight during a
+    // deploy/restart - most requests here finish well under that, but a few (an
+    // order placement mid-checkout, a large CSV export) could plausibly still be
+    // running. This gives in-flight work a longer grace period to finish cleanly
+    // before the host forces a shutdown, rather than aborting it outright.
+    builder.Host.ConfigureHostOptions(options => options.ShutdownTimeout = TimeSpan.FromSeconds(30));
+
     builder.Services.AddControllersWithViews();
     builder.Services.AddHttpContextAccessor();
     builder.Services.AddMemoryCache();
+
+    // Without this, key material is derived from the machine's own key (Windows DPAPI)
+    // or an ephemeral in-memory key with no persistence at all - either way, every
+    // antiforgery token and protected cookie issued before a restart, redeploy, or
+    // scale-out to a second instance becomes unreadable afterward, since a new
+    // instance/process has no way to reconstruct the old key. Keys go outside
+    // wwwroot deliberately - anything under wwwroot is served as a static file, and
+    // key material must never be publicly downloadable. Certificate- or Key-Vault-
+    // based encryption-at-rest for the keys themselves is a further, deployment-
+    // target-specific step (Azure vs. IIS vs. a container host each do this
+    // differently) deliberately not built here - there's no specified target to build
+    // it against, the same reasoning that kept Milestone 15.1 from wiring up a real
+    // SMTP sender with no real SMTP account to send through.
+    var dataProtectionKeyPath = builder.Configuration["DataProtection:KeyPath"]
+        ?? Path.Combine(builder.Environment.ContentRootPath, "DataProtection-Keys");
+    builder.Services.AddDataProtection()
+        .SetApplicationName("ECommerceApp")
+        .PersistKeysToFileSystem(new DirectoryInfo(dataProtectionKeyPath));
+
+    builder.Services.AddResponseCompression(options =>
+    {
+        options.EnableForHttps = true;
+    });
 
     // Cart's Add/UpdateQuantity/Remove/Clear endpoints are AJAX (JSON body), not
     // a posted <form>, so the token has to travel as a request header instead of
@@ -223,6 +254,10 @@ try
 
     app.UseMiddleware<CorrelationIdMiddleware>();
     app.UseMiddleware<SecurityHeadersMiddleware>();
+
+    // Must run before anything that writes to the response body (static files,
+    // MVC action results) so it can wrap the response stream.
+    app.UseResponseCompression();
 
     if (app.Environment.IsDevelopment())
     {

@@ -7,7 +7,9 @@ namespace ECommerceApp.Application.Tests.Inventory;
 public class SupplierValidatorsTests
 {
     private readonly CreateSupplierRequestValidator _createValidator = new();
+    private readonly UpdateSupplierRequestValidator _updateValidator = new();
     private readonly LinkSupplierProductRequestValidator _linkValidator = new();
+    private readonly UpdateSupplierProductRequestValidator _updateLinkValidator = new();
 
     [Fact]
     public void A_well_formed_create_request_is_valid()
@@ -63,5 +65,37 @@ public class SupplierValidatorsTests
         var request = new LinkSupplierProductRequest(1, 1, "SUP-1", 4.5m, 3, true);
 
         _linkValidator.Validate(request).IsValid.Should().BeTrue();
+    }
+
+    [Fact]
+    public void A_well_formed_update_request_is_valid()
+    {
+        var request = new UpdateSupplierRequest(1, "Acme", "ACME", null, "jane@acme.test", null, null, null, null, null, null, null, null, null, true);
+
+        _updateValidator.Validate(request).IsValid.Should().BeTrue();
+    }
+
+    [Fact]
+    public void A_zero_id_is_rejected_on_update()
+    {
+        var request = new UpdateSupplierRequest(0, "Acme", "ACME", null, null, null, null, null, null, null, null, null, null, null, true);
+
+        _updateValidator.Validate(request).IsValid.Should().BeFalse();
+    }
+
+    [Fact]
+    public void A_well_formed_update_link_request_is_valid()
+    {
+        var request = new UpdateSupplierProductRequest(1, "SUP-1", 4.5m, 3, true);
+
+        _updateLinkValidator.Validate(request).IsValid.Should().BeTrue();
+    }
+
+    [Fact]
+    public void A_negative_cost_price_is_rejected_on_update_link()
+    {
+        var request = new UpdateSupplierProductRequest(1, null, -1m, null, false);
+
+        _updateLinkValidator.Validate(request).IsValid.Should().BeFalse();
     }
 }

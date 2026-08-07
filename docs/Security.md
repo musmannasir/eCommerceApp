@@ -1,12 +1,22 @@
 # Security
 
-## Status after Milestone 2
+## Authorization coverage
 
-Catalog administration (Categories, Brands, Products, Product Attributes) is
-gated by the `CanManageCatalog` policy (`SuperAdmin`/`Admin`/`CatalogManager`
-roles) - anonymous requests redirect to login, authenticated non-catalog
-roles (e.g. `Customer`) get a 403 Access Denied, verified by
-`CatalogAuthorizationTests`.
+Every admin area is gated by policy, not just role membership at the Area
+level, verified by a dedicated `*AuthorizationTests` file per area:
+`CanManageCatalog` (Categories/Brands/Products/Product
+Attributes/HomePageBanners/Promotions/TaxRates/ShippingMethods),
+`CanManageInventory` (Warehouses/Inventory/Suppliers/PurchaseOrders),
+`CanManageOrders` (Orders/Reviews moderation/Returns queue -
+`SuperAdmin`/`Admin`/`OrderManager`/`CustomerSupport`),
+`CanProcessRefunds` (the Returns queue's refund action specifically -
+`SuperAdmin`/`Admin`/`OrderManager`, deliberately narrower than
+`CanManageOrders` so `CustomerSupport` can see and triage returns but not
+move money), `CanViewFinancialReports` (dashboard KPI cards, Ledger, Cash
+Flow, Reports - `SuperAdmin`/`Admin` only), and `CanManageUsers` (Users,
+Audit Log, Settings - `SuperAdmin`/`Admin` only). An anonymous request
+redirects to login; an authenticated request without the right role/policy
+gets a 403 Access Denied.
 
 ## File upload security (Milestone 2)
 
@@ -23,14 +33,6 @@ roles (e.g. `Customer`) get a 403 Access Denied, verified by
 - `IFileStorage.DeleteAsync` refuses to touch any path outside `/uploads/`.
 - Orphaned files (an image record deleted from the DB) are deleted from disk
   in the same operation (`ProductService.DeleteImageAsync`).
-
-## Status after Milestone 1
-
-Authentication and authorization are implemented. The Admin Area
-(`/Admin/Home/Index`) now requires the caller to hold one of the non-Customer
-roles (`Roles.StaffRolesCsv`); anonymous and Customer requests are correctly
-denied (see `Testing-Guide.md` and the completion report for verification
-details).
 
 ## Identity model
 
@@ -72,10 +74,10 @@ details).
   Seeded at startup by `RoleAndAdminSeeder`.
 - **Policies**: `CanManageCatalog`, `CanManageInventory`, `CanManageOrders`,
   `CanManageUsers`, `CanViewFinancialReports`, `CanProcessRefunds`
-  (`Domain.Security.Policies`), mapped to roles in `Web/Program.cs`. No
-  controller currently enforces these individually (there's nothing to
-  protect yet) - the Admin Area itself is gated by role membership instead;
-  per-feature policy enforcement starts in Milestone 2.
+  (`Domain.Security.Policies`), mapped to roles in `Web/Program.cs`. Every
+  admin controller enforces the policy matching what it manages (see
+  "Authorization coverage" above) - the Admin Area's own role-membership
+  gate is the outer layer, not the only one.
 - The first `SuperAdmin` is seeded exclusively from `SeedAdmin:Email` /
   `SeedAdmin:Password` (User Secrets in dev) by `RoleAndAdminSeeder`, run at
   startup. If either value is missing, seeding is skipped with a logged
@@ -91,6 +93,11 @@ was caught and fixed during this milestone's own integration testing. The
 permit limit and window are configurable (`RateLimiting:AuthPermitLimit`,
 `RateLimiting:AuthWindowSeconds`; defaults 5 requests / 60 seconds) so test
 environments can raise them without code changes.
+
+Review submission and review reporting (Milestone 12) each carry their own
+named rate-limit policy (`"reviewSubmission"`/`"reviewReport"`) - separate
+from the auth limiter, since these are authenticated, low-frequency-by-design
+actions where the risk is spam/abuse volume rather than credential-guessing.
 
 ## Open-redirect protection
 
@@ -179,6 +186,30 @@ is the modern replacement for `X-Frame-Options` against clickjacking. `img-src`
 includes `data:` because Bootstrap's own CSS embeds `data:image/svg+xml`
 URIs for form-select carets and similar icons - discovered as a real
 regression during manual verification, not anticipated in advance.
+
+## Audit logging (Milestone 16.2)
+
+`/Admin/AuditLog`, gated by `CanManageUsers`, reads `SecurityAuditEvents` -
+the same table Milestone 1 created for login/lockout/session events.
+Milestone 16.1 added new event types for admin actions taken on other
+users' accounts (role change, activation/deactivation, unlock,
+admin-triggered password reset), so the log covers both self-service
+security events and staff actions on behalf of others in one place,
+filterable by date range, event type, outcome, and user email, with CSV
+export. There is no separate moderation/action audit trail for anything
+else in the app (e.g. review moderation, order cancellation) - only
+identity/account-security events are recorded here.
+
+## Data protection (Milestone 17.2)
+
+ASP.NET Core's Data Protection keys - which back both the auth cookie and
+anti-forgery tokens - persist to disk (`DataProtection-Keys/` by default,
+overridable via `DataProtection:KeyPath`) rather than the framework
+default of an ephemeral in-memory key ring. Without this, every app
+restart would silently invalidate every signed-in cookie and CSRF token.
+See `Architecture.md`'s "Data protection & performance" section and
+`Deployment-Guide.md` for the production key-directory procedure (still
+target-specific, decided at deployment time).
 
 ## CORS (Milestone 17.1)
 

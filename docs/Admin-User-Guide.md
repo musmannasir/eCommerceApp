@@ -1,6 +1,6 @@
 # Admin User Guide
 
-## What you can do today (after Milestone 4.1)
+## What you can do (complete, as of Milestone 18.1)
 
 - **Log in as the seeded SuperAdmin**: configure `SeedAdmin:Email` /
   `SeedAdmin:Password` via User Secrets (see README.md), start the app once
@@ -110,8 +110,7 @@
     discount's currency value).
   - A **start date** (required) and optional **end date**.
   - Optional **max total uses** / **max uses per customer** - these are
-    recorded but not yet enforced (the form says so); enforcing them needs
-    order history, which doesn't exist until Milestone 9.
+    recorded but not enforced anywhere; the form says so.
   - **Active/Inactive** - an inactive promotion's code stops working
     immediately, even mid-window.
 
@@ -140,14 +139,14 @@
   - A **rate percentage** (0-100).
   - **Active/Inactive** - an inactive rate stops applying immediately.
 
-  These rates power the **Estimated tax** line on the customer-facing Cart
-  page, calculated against the store's configured default jurisdiction
-  (`Store:DefaultTaxCountryCode`/`Store:DefaultTaxRegionCode` in
-  configuration) - not the customer's real shipping address, since there's
-  no Address entity yet (that arrives in Milestone 8.1). The line only
-  appears once at least one rate is configured; until then, nothing is
-  shown rather than a misleading $0.00. Real, destination-based tax
-  calculation at checkout arrives with Milestones 7.4/8.
+  These rates power two things: the **Estimated tax** line on the
+  customer-facing Cart page (before checkout, calculated against the
+  store's configured default jurisdiction - set on the **Settings** page,
+  see below - since there's no real shipping address known yet), and the
+  real, destination-based tax on the Checkout Review step and the finished
+  Order, calculated against the customer's actual chosen address. Either
+  way, the line/amount only appears once at least one matching rate is
+  configured; until then, nothing is shown rather than a misleading $0.00.
 
 - **Shipping methods** (`/Admin/ShippingMethods`): searchable/paginated
   list, create/edit, deactivate/activate, delete (soft, with a recycle bin
@@ -165,15 +164,121 @@
   - **Active/Inactive**.
 
   The *cheapest* active method for the store's configured default
-  jurisdiction (`Store:DefaultShippingCountryCode`/
-  `Store:DefaultShippingRegionCode`) powers the **Estimated shipping** line
-  on the customer-facing Cart page - same estimate-only reasoning as tax
-  rates (no real address yet, and no way to let the customer pick a method
-  until checkout exists). The line only appears once at least one method
-  is configured. Real, destination-based shipping calculation and method
-  selection arrive with Milestones 7.4/8.
+  jurisdiction powers the Cart page's early **Estimated shipping** line,
+  same reasoning as tax; the line only appears once at least one method is
+  configured. At checkout, the customer instead sees and picks from every
+  active method available for their actual chosen address, with the real
+  cost and (if applicable) free-shipping threshold already reflecting any
+  applied coupon.
 
-Orders, Customers, Reports, and Settings sections are still placeholders -
-they activate in their respective milestones.
+### Orders (`SuperAdmin`/`Admin`/`OrderManager`/`CustomerSupport`)
 
-This guide grows section-by-section as each admin capability is built.
+- **Order queue** (`/Admin/Orders`): search by order number or customer
+  name, filter by status (Pending, Paid, PaymentFailed,
+  StockReservationFailed, Cancelled, Shipped, Delivered), **Open** a row to
+  see the full detail page.
+- **Order detail**: shipping address, shipping method, payment (masked
+  card/brand or decline reason), shipment tracking once shipped, every
+  line item, and totals. Actions available depend on the order's current
+  status:
+  - **Cancel order** (Paid only): releases the order's reserved stock and
+    marks it Cancelled. Does **not** process a refund - a cancelled order
+    was never delivered, so there's nothing to return; a refund only
+    follows an approved, received return (see Returns below).
+  - **Mark shipped** (Paid only): enter a carrier and tracking number
+    (both required) to record the shipment and move the order to Shipped.
+    This consumes the stock reservation for good; a shipped order can no
+    longer be cancelled.
+  - **Mark delivered** (Shipped only): moves the order to Delivered, which
+    is what makes it eligible for a customer-initiated return request.
+  - **Internal notes**: a staff-only free-text field, saved independently,
+    never shown to the customer - useful for handoffs between staff
+    members on a tricky order.
+
+### Reviews (`SuperAdmin`/`Admin`/`OrderManager`/`CustomerSupport`)
+
+- **Review moderation queue** (`/Admin/Reviews`): shows every review with
+  at least one open customer report (a badge shows how many). Reviews with
+  no reports don't appear here at all - there's no general review-browsing
+  list, only a moderation queue.
+  - **Dismiss reports**: clears all reports on the review; it stays live
+    and can be reported again later if warranted.
+  - **Remove review**: soft-deletes the review entirely.
+
+### Returns & Refunds (`SuperAdmin`/`Admin`/`OrderManager`/`CustomerSupport`; refunding also needs `SuperAdmin`/`Admin`/`OrderManager`)
+
+- **Return requests** (`/Admin/Returns`), split into two sections:
+  - **Pending decision**: a customer's return request, with their chosen
+    reason and comment. **Approve** authorizes the return (staff now
+    expect the item shipped back) or **Reject** with a required reason -
+    neither one refunds or restocks anything yet.
+  - **Awaiting receipt**: approved returns waiting for the item to
+    physically arrive back. **Mark received & refund** confirms receipt
+    and, in one step, issues the refund and restocks the returned
+    inventory. This action needs a narrower permission than viewing the
+    queue (`CustomerSupport` can see and approve/reject, but can't issue
+    money) - if you don't see the button, that's why.
+
+### Finance (`SuperAdmin`/`Admin` only)
+
+- **Dashboard** (`/Admin/Home/Index`): KPI cards - total revenue, total
+  refunded, net revenue, average order value, paid orders, refunds issued -
+  plus a link into the full ledger. Staff without this permission simply
+  don't see these cards; everyone else's dashboard is unaffected.
+- **Ledger** (`/Admin/Ledger`): every charge and refund merged into one
+  transaction table (date, type, order, amount), with **Export CSV**.
+- **Cash Flow** (`/Admin/Ledger/CashFlow`): day-by-day revenue/refunded/net
+  bars over a date range (defaults to the last 30 days), with its own
+  **Export CSV**.
+
+### Reports (`SuperAdmin`/`Admin` only)
+
+- **Reports hub** (`/Admin/Reports`): links to Ledger, Cash Flow, and Top
+  Selling Products.
+- **Top Selling Products** (`/Admin/Reports/TopSellingProducts`):
+  date-range filterable table of quantity sold and revenue per product,
+  with **Export CSV**.
+
+### Users (`SuperAdmin`/`Admin` only)
+
+- **User management** (`/Admin/Users`) - distinct from a customer's own
+  self-service profile page; this is where staff manage *every* account,
+  customer or staff. Search and filter by role/active status.
+  - **New user**: create an account directly with a chosen role.
+  - **Edit**: change a user's name or role.
+  - **Activate**/**Deactivate**: a permanent admin-controlled disable,
+    separate from a temporary lockout (too many failed logins).
+  - **Unlock account**: clears a temporary lockout early.
+  - **Send password reset**: emails the user a reset link on their behalf -
+    the same flow the customer-facing "Forgot your password?" link uses.
+  - Editing **your own account** disables the role and deactivation
+    controls - you can't accidentally lock yourself out from here.
+
+### Audit Log (`SuperAdmin`/`Admin` only)
+
+- **Audit log** (`/Admin/AuditLog`): every recorded security-relevant
+  event - logins, password changes/resets, lockouts, session revocations,
+  and admin actions on other users' accounts - filterable by date range
+  (defaults to the last 30 days), event type, outcome (succeeded/failed),
+  and the acting user's email, showing the IP address recorded at the
+  time. **Export CSV**.
+
+### Settings (`SuperAdmin`/`Admin` only)
+
+- **Store settings** (`/Admin/Settings`) - a single form, not a list,
+  since there's exactly one store-wide configuration row:
+  - **General**: store name, currency, default country (display-only).
+  - **Pricing**: whether displayed prices include tax.
+  - **Storefront**: how many items the recently-viewed section keeps.
+  - **Checkout defaults**: the default tax/shipping country and region
+    codes used for the Cart page's early tax/shipping estimates, before a
+    real customer address is known (see Tax Rates/Shipping Methods above).
+  - Two admins can't silently overwrite each other's changes to this
+    shared row - saving detects the conflict and asks you to reload.
+
+### Notifications
+
+There's no admin UI for notifications - order-confirmation and
+password-reset emails are sent automatically (customer-triggered, or
+staff-triggered via **Send password reset** above) and aren't configured
+or viewed from anywhere in the admin area.

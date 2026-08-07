@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<!--
+  Milestone 18.1: without this, the XPlat Code Coverage collector counts EF
+  Core migrations and other generated code as coverable lines. Migrations are
+  boilerplate (a table creation call per column) that's already exercised as
+  a whole by every integration test run applying them, never unit tested
+  line by line, and grows with every milestone regardless of how well the
+  actual business logic is tested; left uncounted, the "meaningful line
+  coverage" percentage the project brief asks for (see Testing-Guide.md)
+  would silently trend downward every time a migration is added, independent
+  of real test quality. Usage: dotnet test with the settings flag pointed at
+  this file, plus the XPlat Code Coverage collect flag.
+-->
+<RunSettings>
+  <DataCollectionRunSettings>
+    <DataCollectors>
+      <DataCollector friendlyName="XPlat code coverage">
+        <Configuration>
+          <Format>cobertura</Format>
+          <ExcludeByFile>**/Migrations/*.cs,**/obj/**/*.cs</ExcludeByFile>
+        </Configuration>
+      </DataCollector>
+    </DataCollectors>
+  </DataCollectionRunSettings>
+</RunSettings>

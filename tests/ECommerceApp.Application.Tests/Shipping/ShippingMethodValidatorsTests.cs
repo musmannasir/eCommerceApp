@@ -7,6 +7,7 @@ namespace ECommerceApp.Application.Tests.Shipping;
 public class ShippingMethodValidatorsTests
 {
     private readonly CreateShippingMethodRequestValidator _createValidator = new();
+    private readonly UpdateShippingMethodRequestValidator _updateValidator = new();
 
     [Fact]
     public void A_well_formed_country_wide_request_is_valid()
@@ -88,6 +89,33 @@ public class ShippingMethodValidatorsTests
         _createValidator.Validate(request).IsValid.Should().BeFalse();
     }
 
+    [Fact]
+    public void A_well_formed_update_request_is_valid()
+    {
+        var request = ValidUpdateRequest();
+
+        _updateValidator.Validate(request).IsValid.Should().BeTrue();
+    }
+
+    [Fact]
+    public void A_zero_id_is_rejected_on_update()
+    {
+        var request = ValidUpdateRequest() with { Id = 0 };
+
+        _updateValidator.Validate(request).IsValid.Should().BeFalse();
+    }
+
+    [Fact]
+    public void A_negative_base_rate_is_rejected_on_update()
+    {
+        var request = ValidUpdateRequest() with { BaseRate = -1m };
+
+        _updateValidator.Validate(request).IsValid.Should().BeFalse();
+    }
+
     private static CreateShippingMethodRequest ValidRequest() => new(
         "Standard Shipping", null, "US", null, 5m, 1m, null, null, null, 0, true);
+
+    private static UpdateShippingMethodRequest ValidUpdateRequest() => new(
+        1, "Standard Shipping", null, "US", null, 5m, 1m, null, null, null, 0, true);
 }

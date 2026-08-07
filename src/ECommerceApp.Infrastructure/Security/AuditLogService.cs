@@ -64,7 +64,12 @@ public sealed class AuditLogService : IAuditLogService
             eventsQuery = eventsQuery.Where(e => e.Succeeded == query.Succeeded.Value);
         }
 
-        var events = await eventsQuery.OrderByDescending(e => e.Id).ToListAsync(cancellationToken);
+        // AsNoTracking - this is a pure viewer (see class doc comment: "no new
+        // audit-writing capability"), and GetAllAsync's unpaginated CSV-export
+        // path can load a genuinely large row count, so skipping EF's change-
+        // tracking snapshot for rows that are never saved back is a real saving,
+        // not a no-op.
+        var events = await eventsQuery.AsNoTracking().OrderByDescending(e => e.Id).ToListAsync(cancellationToken);
 
         var userIds = events.Where(e => e.UserId is not null).Select(e => e.UserId!).Distinct().ToList();
         var emailByUserId = await _dbContext.Users

@@ -44,6 +44,19 @@ public class ApplicationStartupTests
     }
 
     [Fact]
+    public async Task Health_ready_endpoint_reports_healthy_against_the_real_test_database()
+    {
+        // Milestone 17.3 added a bounded timeout to SqlServerHealthCheck - this
+        // confirms the happy path still reports healthy well within it against a
+        // real, reachable SQL Server, not just that the timeout exists in isolation.
+        var client = _fixture.Factory.CreateClient();
+
+        var response = await client.GetAsync("/health/ready");
+
+        response.IsSuccessStatusCode.Should().BeTrue();
+    }
+
+    [Fact]
     public async Task Unknown_route_renders_the_branded_not_found_page()
     {
         var client = _fixture.Factory.CreateClient();

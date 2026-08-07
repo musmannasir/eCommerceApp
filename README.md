@@ -3,8 +3,12 @@
 A production-grade, single-store e-commerce application: customer storefront
 + admin panel, built with .NET, ASP.NET Core MVC, EF Core, and SQL Server.
 
-Being built milestone-by-milestone; see [`docs/Milestone-Status.md`](docs/Milestone-Status.md)
-for what's actually implemented right now versus still planned.
+Built milestone-by-milestone; see [`docs/Milestone-Status.md`](docs/Milestone-Status.md)
+for the full per-milestone build record. All 18 milestones are complete.
+
+For a production deployment (Windows Server + IIS), see
+[`docs/Deployment-Guide.md`](docs/Deployment-Guide.md). Everything below
+this point is for local development.
 
 ## Solution structure
 

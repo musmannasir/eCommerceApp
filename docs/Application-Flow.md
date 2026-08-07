@@ -1,20 +1,22 @@
 # Application Flow
 
-## Status after Milestone 6.3
+## Status: complete (M1 through M18.1)
 
-Checkout/order flows don't exist yet (Milestone 7+). Milestone 4
-(Storefront Home, Navigation and Product Discovery) is complete except for
-rating/best-selling filter and sort options, which have no backing data
-until Milestones 12 and 9 - see `Milestone-Status.md`'s "Deferred filter/sort
-options" note. Milestone 5.1 added the product detail page; Milestone 5.2
-made variant switching live (no page reload) and added the central
-`IPricingService`; Milestone 5.3 closed out Milestone 5 with real
-recently-viewed tracking and category/brand/tag/price-based recommendations.
-Milestone 6.1 added cart core - the Add to Cart button (disabled since
-Milestone 5.1) is now live, and a `/Cart` page manages what's in it.
-Milestone 6.2 added cart merge on sign-in and pricing/stock integrity
-notices. Milestone 6.3 closes out Milestone 6 with an account-only
-wishlist. What's live today:
+Every route below is live in the finished application. This document was
+written incrementally as each milestone landed, so most bullets still carry
+their originating milestone number - that numbering is left in place as a
+build history, not a forward-reference to something still pending. Two
+storefront gaps mentioned below are permanent, deliberate scope boundaries
+rather than "not yet built": rating/best-selling sort and filter options
+(`CatalogSortOption`'s own code comment: "there is no rating or best-selling
+signal" - reviews exist since Milestone 12 but were never wired into
+sorting), the home page's "Best sellers" section (still a static
+placeholder - `RecommendationService`'s own comment confirms "best selling"
+was never added as a signal), and "Frequently Bought Together" on the
+product detail page (still a static "Coming in a later milestone" note with
+no later milestone left to add it). See `Milestone-Status.md` for the full
+per-milestone scope record if you need the "why" behind any individual
+route below.
 
 ### Public / customer-facing (MVC, cookie auth)
 
@@ -22,10 +24,12 @@ wishlist. What's live today:
   blocks, featured categories, featured/new-arrival/discounted products (all
   admin-managed or query-derived from real catalog data - see
   `Architecture.md`'s "Storefront home page composition" section), with
-  a real, cookie/DB-backed recently-viewed section (Milestone 5.3), and
-  honest placeholder sections for best sellers (needs Milestone 9 order
-  data) and "recommended for you" (no anchor product to score against on
-  the home page - see `Architecture.md`'s Milestone 5.3 section).
+  a real, cookie/DB-backed recently-viewed section (Milestone 5.3), and a
+  permanent placeholder for "best sellers" - real order data has existed
+  since Milestone 9, but nothing was ever wired up to rank by it (see the
+  "Status" note above); "recommended for you" is likewise permanently
+  absent from the home page itself, since there's no anchor product to
+  score against there - see `Architecture.md`'s Milestone 5.3 section.
 - The public layout (every page) renders a real, live, now-clickable
   category nav via `CategoryNavViewComponent`.
 - `GET /Products` - all active/published products, paginated.
@@ -58,11 +62,13 @@ wishlist. What's live today:
   an anonymous click redirects to login), description, specifications, warranty/returns/shipping, real
   related products (category/brand/tag/price-scored recommendations,
   Milestone 5.3), a real recently-viewed section (viewing this page also
-  records it for next time), and honest placeholders for ratings/reviews/
-  frequently-bought-together. 404 for an unknown, unpublished, inactive,
-  or soft-deleted product. See `Architecture.md`'s "Product detail page",
-  "Variant resolution & pricing service", and "Recently viewed &
-  recommendations" sections for the full reasoning.
+  records it for next time), a real ratings/reviews tab (Milestone 12.1 -
+  see the Reviews section below), and a permanent "Frequently Bought
+  Together" placeholder (never wired up - see the "Status" note above).
+  404 for an unknown, unpublished, inactive, or soft-deleted product. See
+  `Architecture.md`'s "Product detail page", "Variant resolution & pricing
+  service", and "Recently viewed & recommendations" sections for the full
+  reasoning.
 - `GET /Product/{slug}/Resolve?variantId=` - JSON endpoint backing the live
   variant switcher; rejects a variant that doesn't exist, isn't active, or
   doesn't belong to the product (Milestone 5.2).
@@ -110,9 +116,12 @@ wishlist. What's live today:
 - The Cart page's summary also shows an **Estimated tax** line (Milestone
   7.2) when at least one tax rate is configured for the store's default
   jurisdiction - computed per line by `Product.TaxCategory` (non-taxable
-  products excluded), since there's no real customer destination to
-  calculate against yet (`Address` arrives in Milestone 8.1). As of
-  Milestone 7.4, this is computed against each line's **post-discount**
+  products excluded); this line stays an estimate against the store's
+  default jurisdiction even now that `Address` exists (Milestone 8.1),
+  because the cart is browsed before any address is chosen - real,
+  destination-based tax appears once checkout starts (see the Checkout
+  section below). As of Milestone 7.4, this is computed against each
+  line's **post-discount**
   amount (via the Checkout Calculation Service, which allocates the cart's
   Promotion discount across the lines it actually applies to), not the raw
   line total. The line is hidden entirely - not shown as $0.00 - when no
@@ -126,11 +135,11 @@ wishlist. What's live today:
   As of Milestone 7.4, the threshold is checked against the **post-discount**
   subtotal (via the Checkout Calculation Service), so a coupon that drops
   the subtotal below the threshold correctly starts charging shipping
-  again instead of staying free. Same estimate-only reasoning as tax - no
-  real destination until Milestone 8.1, no method-picker UI until Milestone
-  8.2 - and hidden entirely rather than shown as $0.00/"Free" when no
-  method is configured at all. See `Architecture.md`'s Milestone 7.3 and
-  7.4 sections.
+  again instead of staying free. Same estimate-only reasoning as tax - the
+  cart is browsed before checkout picks a real address and method - and
+  hidden entirely rather than shown as $0.00/"Free" when no method is
+  configured at all. See `Architecture.md`'s Milestone 7.3 and 7.4
+  sections.
 - The Cart page's summary also shows an **Estimated total** line (Milestone
   7.4), `Total + EstimatedTax + EstimatedShipping` - shown whenever either
   tax or shipping is configured, still just an estimate for the same
@@ -241,6 +250,53 @@ wishlist. What's live today:
   banner with the gateway's decline reason for `PaymentFailed`. A missing
   or foreign order number redirects back to `/Checkout` with a "we couldn't
   find that order" message instead of erroring.
+- `GET /Orders` (`[Authorize]`, Milestone 11.1) - "Your orders" dashboard:
+  total-orders/total-spent cards, then a paged table (order number, placed
+  date, item count, total, status) with a View link per row.
+- `GET /Orders/{orderNumber}` (Milestone 11.2) - full order detail:
+  status-step badges (Placed/Paid/Shipped/Delivered, or Payment
+  failed/Stock issue/Cancelled), the shipping address and method, a
+  Tracking card (carrier, tracking number, shipped/delivered timestamps -
+  shown only once the order has shipped), a return-request status card
+  once one exists, the payment card, and line items with totals. Same
+  ownership scoping as Confirmation - another customer's order returns
+  `NotFound`. Buttons/links shown conditionally by status: **Print
+  invoice** (Paid/Shipped/Delivered only), **Reorder these items** (any
+  status - re-adds the order's items to the cart and redirects to `/Cart`),
+  **Cancel order** (Paid only - releases the stock reservation, no refund),
+  **Request a return** (Delivered only, and only if no open return request
+  already exists for this order).
+- `GET /Orders/{orderNumber}/Invoice` (Milestone 11.2) - only reachable once
+  `PaymentStatus` is `Succeeded`; otherwise redirects back to Details with
+  an error.
+- `POST /Orders/{orderNumber}/Reorder` (Milestone 11.3) - re-adds every
+  line from the order to the current cart (not gated by order status -
+  even a cancelled order's items can be reordered) and redirects to
+  `/Cart/Index`.
+- `POST /Orders/{orderNumber}/Cancel` (Milestone 10.2, self-service since
+  11.2) - customer-initiated cancellation, only offered while `Status` is
+  `Paid`; same release-reservation/no-refund behavior as the admin
+  equivalent.
+- `GET`/`POST /Orders/{orderNumber}/Return` (Milestone 13.1/13.2) - the
+  return-request form (reason dropdown: Defective, Wrong item, No longer
+  needed, Not as described, Other, plus a comment) and its submission,
+  only offered once the order is `Delivered` and has no open
+  (Requested/Approved) return request already. Submitting redirects back to
+  Details, which now shows the request's status; staff decide it from
+  `/Admin/Returns` (see the Admin section below).
+- `POST /Product/{slug}/Review` (`[Authorize]`, rate-limited, Milestone
+  12.1) - submits a rating (1-5) and body text for the product on whose
+  page the form appears; only shown if the signed-in customer hasn't
+  already reviewed this product (one review per (user, product), enforced
+  by a unique index). `IsVerifiedPurchase` is set automatically from the
+  customer's own order history (a genuinely charged order for this
+  product), not something the customer can claim. The product detail
+  page's rating summary (average, star display, count) updates
+  immediately.
+- `POST /Product/{slug}/Review/{reviewId}/Report` (`[Authorize]`,
+  rate-limited, Milestone 12.2) - flags a review for moderation with a
+  reason and optional comment; feeds the admin `/Admin/Reviews` queue. At
+  most one report per (review, reporter).
 - `GET /Account/Register`, `POST /Account/Register` - creates the account
   (assigned the `Customer` role), signs the user in immediately, then folds
   any guest cart into the new account (Milestone 6.2 - see
@@ -265,11 +321,15 @@ wishlist. What's live today:
 
 ### Admin (MVC, cookie auth, role-gated)
 
-- `GET /Admin/Home/Index` - dashboard placeholder. Requires one of
+- `GET /Admin/Home/Index` - the admin dashboard. Requires one of
   `SuperAdmin`/`Admin`/`CatalogManager`/`InventoryManager`/`OrderManager`/
   `CustomerSupport` (`Roles.StaffRolesCsv`); anonymous requests redirect to
   login, authenticated non-staff (e.g. `Customer`) get redirected to
-  `/Home/AccessDenied` (403).
+  `/Home/AccessDenied` (403). Since Milestone 14.1, staff who additionally
+  hold `CanViewFinancialReports` (`SuperAdmin`/`Admin`) see real KPI cards
+  here (total revenue, total refunded, net revenue, average order value,
+  paid orders, refunds issued) plus a link into the Ledger - see the
+  Finance bullets further down.
 - `/Admin/Categories`, `/Admin/Brands`, `/Admin/ProductAttributes`,
   `/Admin/Products` - full catalog CRUD, gated by the `CanManageCatalog`
   policy (`SuperAdmin`/`Admin`/`CatalogManager`). See `Admin-User-Guide.md`
@@ -295,17 +355,19 @@ wishlist. What's live today:
   (Percentage/Fixed amount), scope (Entire order/Category/Brand/Product,
   with a matching dropdown that only shows the field the selected scope
   needs), minimum order amount, max discount cap, a start/end date window,
-  and Max total uses/Max uses per customer (recorded but not yet enforced -
-  a note to that effect is shown right on the form). See
-  `Admin-User-Guide.md`.
+  and Max total uses/Max uses per customer - still recorded but not
+  enforced in the finished app; a note to that effect is shown right on the
+  form. See `Admin-User-Guide.md`.
 - `/Admin/TaxRates` - Milestone 7.2, tax rate CRUD (soft delete + recycle
-  bin) under a new "Checkout" nav section, gated by `CanManageCatalog` (no
-  separate Checkout/Finance policy exists yet). Country code (ISO alpha-2),
+  bin) under the "Checkout" nav section, gated by `CanManageCatalog` (no
+  separate Checkout/Finance policy exists). Country code (ISO alpha-2),
   optional region code (blank = whole-country rate), tax category (matched
   against a product's Tax Category by plain string, case-insensitive), and
-  a percentage rate. Feeds the storefront Cart page's "Estimated tax" line
-  against the store's configured default jurisdiction - not real,
-  destination-based tax, which arrives with Checkout (Milestones 7.4/8).
+  a percentage rate. Feeds two different things: the storefront Cart page's
+  early "Estimated tax" line (against the store's configured default
+  jurisdiction, before an address is known), and - since Milestone 7.4/8 -
+  the real, destination-based tax on the Checkout Review step and the
+  finished Order, computed against the customer's actual chosen address.
   See `Admin-User-Guide.md`.
 - `/Admin/ShippingMethods` - Milestone 7.3, shipping method CRUD (soft
   delete + recycle bin) in the same "Checkout" nav section as Tax Rates,
@@ -314,10 +376,60 @@ wishlist. What's live today:
   `Product.Weight`), an optional free-shipping subtotal threshold, and an
   optional estimated delivery-day range. Unlike Tax Rates, several named
   methods can coexist for the same jurisdiction (e.g. Standard and
-  Express). The cheapest active method for the store's configured default
-  jurisdiction feeds the storefront Cart page's "Estimated shipping" line -
-  not real, destination-based shipping or method selection, which arrive
-  with Checkout (Milestones 7.4/8). See `Admin-User-Guide.md`.
+  Express). Feeds both the Cart page's early "Estimated shipping" line
+  (cheapest active method for the store's default jurisdiction) and, since
+  Milestone 7.4/8, the real Checkout Shipping step's full list of options
+  for the customer's actual chosen address, with real method selection.
+  See `Admin-User-Guide.md`.
+- `/Admin/Orders` - order queue (search by order number/customer name,
+  status filter) and order detail page, gated by `CanManageOrders`
+  (`SuperAdmin`/`Admin`/`OrderManager`/`CustomerSupport`). From the detail
+  page: Cancel (only while Paid - releases the stock reservation, no
+  refund), Mark shipped (only while Paid - requires a carrier and tracking
+  number, creates the order's `Shipment`), Mark delivered (only while
+  Shipped), and a staff-only Internal notes field never shown to the
+  customer. See `Admin-User-Guide.md`.
+- `/Admin/Reviews` - review moderation queue (Milestone 12.2): every review
+  with at least one open report, gated by `CanManageOrders`. Dismiss clears
+  the reports and leaves the review live; Remove soft-deletes it. See
+  `Admin-User-Guide.md`.
+- `/Admin/Returns` - return request queue (Milestone 13.2/13.3), gated by
+  `CanManageOrders`, split into "Pending decision" (Approve/Reject) and
+  "Awaiting receipt" sections. The refund action ("Mark received & refund")
+  additionally requires `CanProcessRefunds`
+  (`SuperAdmin`/`Admin`/`OrderManager` - deliberately narrower, excludes
+  `CustomerSupport`) and, in one call, issues the refund and restocks the
+  returned inventory. See `Admin-User-Guide.md`.
+- `/Admin/Ledger` - Milestone 14.1/14.2, gated by `CanViewFinancialReports`
+  (`SuperAdmin`/`Admin` only). The merged charge/refund transaction ledger
+  with CSV export, plus a Cash Flow view (day-by-day revenue/refunded/net,
+  date-range filterable, its own CSV export). The dashboard's KPI cards
+  (`/Admin/Home/Index` - total revenue, total refunded, net revenue,
+  average order value, paid orders, refunds issued) are gated by the same
+  policy and simply don't render for a staff member who doesn't hold it.
+  See `Admin-User-Guide.md`.
+- `/Admin/Reports` - Milestone 14.3, gated by `CanViewFinancialReports`. A
+  hub linking to Ledger, Cash Flow, and Top Selling Products (date-range
+  filterable, its own CSV export). See `Admin-User-Guide.md`.
+- `/Admin/Users` - Milestone 16.1, gated by `CanManageUsers`
+  (`SuperAdmin`/`Admin` only) - distinct from `AccountController`'s
+  self-service register/login/change-own-password. Create an account with a
+  role, edit name/role, activate/deactivate, unlock a locked-out account,
+  and send a password-reset email on a user's behalf (reuses the same
+  `IAuthService.ForgotPasswordAsync` flow the customer-facing forgot-password
+  page uses). Editing your own account disables the role/deactivation
+  controls, so an admin can't lock themselves out. See `Admin-User-Guide.md`.
+- `/Admin/AuditLog` - Milestone 16.2, gated by `CanManageUsers`. Reads the
+  same `SecurityAuditEvents` table Milestone 1 created, filterable by date
+  range, event type, outcome, and user email, with CSV export. See
+  `Admin-User-Guide.md`.
+- `/Admin/Settings` - Milestone 16.3, gated by `CanManageUsers`. A
+  single-row editor (`StoreSettings`, not a list) for store name, currency,
+  default country, whether displayed prices include tax, the recently-viewed
+  section's max item count, and the default tax/shipping jurisdiction codes
+  the Cart page's early estimates use before a real address exists.
+  Optimistic concurrency via `RowVersion`, since two admins could edit this
+  shared row at once. See `Admin-User-Guide.md`.
 
 ### API (`/api/v1/auth`, JWT bearer)
 
@@ -332,9 +444,21 @@ wishlist. What's live today:
 
 ### Infra
 
-- `GET /health/live`, `GET /health/ready` - unchanged from the Foundation
-  milestone.
+- `GET /health/live`, `GET /health/ready` - `/health/ready` now (Milestone
+  17.3) has a bounded 5-second timeout on its SQL Server check, so a hung
+  database makes it fail fast rather than hang indefinitely.
 - Unmapped routes still resolve to the branded 404 page.
+- Every response gets security headers (`Content-Security-Policy`,
+  `X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy`) and, where
+  applicable, CORS handling (Milestone 17.1) - see `Security.md`.
+- Responses are Brotli/gzip-compressed (Milestone 17.2) where the client
+  accepts it.
+- Two background/async pieces have no HTTP route of their own:
+  `OutboxProcessingBackgroundService` (Milestone 15.3) drains pending
+  `OutboxMessages` (order-confirmation and password-reset emails) on a
+  timer, and ASP.NET Core Data Protection keys persist to disk
+  (`DataProtection-Keys/` by default, Milestone 17.2) so cookies/tokens
+  survive an app restart.
 
-This document is filled in feature-by-feature as each remaining milestone
-lands (browsing, cart, checkout, order processing, returns, etc.).
+This document is complete as of Milestone 18.1 - every route the finished
+application serves, across storefront, admin, and API, is listed above.
