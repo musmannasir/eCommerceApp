@@ -1,4 +1,5 @@
 using ECommerceApp.Infrastructure.Persistence;
+using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 
 namespace ECommerceApp.IntegrationTests.TestSupport;
@@ -9,12 +10,41 @@ namespace ECommerceApp.IntegrationTests.TestSupport;
 /// </summary>
 public static class TestDatabase
 {
-    public const string ConnectionString =
-        "Server=(localdb)\\MSSQLLocalDB;Database=ECommerceAppTestDb;Trusted_Connection=True;TrustServerCertificate=True;MultipleActiveResultSets=True;";
+    /// <summary>
+    /// The only database name <see cref="ResetAsync"/> will ever run its
+    /// destructive script against - deliberately distinct from the dev
+    /// database's own name (<c>ECommerceAppDb</c>, configured via User
+    /// Secrets per README.md), so a typo or a future refactor that changes
+    /// how the connection string is resolved can't silently point this at
+    /// real data.
+    /// </summary>
+    public const string DatabaseName = "ECommerceAppTestDb";
 
-    /// <summary>Applies pending migrations, then clears all auth- and catalog-related tables for a clean slate.</summary>
+    public const string ConnectionString =
+        $"Server=(localdb)\\MSSQLLocalDB;Database={DatabaseName};Trusted_Connection=True;TrustServerCertificate=True;MultipleActiveResultSets=True;";
+
+    /// <summary>
+    /// Applies pending migrations, then clears all auth- and catalog-related
+    /// tables for a clean slate. Milestone 18.1 - refuses to run the
+    /// destructive part of this against anything other than
+    /// <see cref="DatabaseName"/>, checked against the DbContext's actual
+    /// resolved connection at call time rather than trusting that whatever
+    /// wired it up got it right - the whole point is to catch a future
+    /// mistake in that wiring before it reaches a real database, not to
+    /// re-verify a constant against itself.
+    /// </summary>
     public static async Task ResetAsync(ApplicationDbContext dbContext)
     {
+        var resolvedDatabaseName = new SqlConnectionStringBuilder(dbContext.Database.GetConnectionString()).InitialCatalog;
+        if (!string.Equals(resolvedDatabaseName, DatabaseName, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException(
+                $"Refusing to reset a database that is not the dedicated integration-test database. " +
+                $"Resolved database name was '{resolvedDatabaseName}', expected '{DatabaseName}'. " +
+                "This check exists specifically to stop a misconfigured test run from wiping the dev or " +
+                "production database - see Testing-Guide.md.");
+        }
+
         await dbContext.Database.MigrateAsync();
 
         await dbContext.Database.ExecuteSqlRawAsync("""

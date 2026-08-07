@@ -7,6 +7,7 @@ namespace ECommerceApp.Application.Tests.Marketing;
 public class PromotionValidatorsTests
 {
     private readonly CreatePromotionRequestValidator _createValidator = new();
+    private readonly UpdatePromotionRequestValidator _updateValidator = new();
 
     [Fact]
     public void A_well_formed_entire_order_request_is_valid()
@@ -80,7 +81,35 @@ public class PromotionValidatorsTests
         _createValidator.Validate(request).IsValid.Should().BeFalse();
     }
 
+    [Fact]
+    public void A_well_formed_update_request_is_valid()
+    {
+        var request = ValidUpdateRequest();
+
+        _updateValidator.Validate(request).IsValid.Should().BeTrue();
+    }
+
+    [Fact]
+    public void A_zero_id_is_rejected_on_update()
+    {
+        var request = ValidUpdateRequest() with { Id = 0 };
+
+        _updateValidator.Validate(request).IsValid.Should().BeFalse();
+    }
+
+    [Fact]
+    public void A_percentage_discount_over_100_is_rejected_on_update()
+    {
+        var request = ValidUpdateRequest() with { DiscountType = "Percentage", DiscountValue = 150m };
+
+        _updateValidator.Validate(request).IsValid.Should().BeFalse();
+    }
+
     private static CreatePromotionRequest ValidRequest() => new(
         "Ten percent off", null, "SAVE10", "Percentage", 10m, "EntireOrder",
+        null, null, null, null, null, DateTime.UtcNow, null, null, null, true);
+
+    private static UpdatePromotionRequest ValidUpdateRequest() => new(
+        1, "Ten percent off", null, "SAVE10", "Percentage", 10m, "EntireOrder",
         null, null, null, null, null, DateTime.UtcNow, null, null, null, true);
 }

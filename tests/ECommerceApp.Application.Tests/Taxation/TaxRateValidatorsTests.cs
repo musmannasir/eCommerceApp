@@ -7,6 +7,7 @@ namespace ECommerceApp.Application.Tests.Taxation;
 public class TaxRateValidatorsTests
 {
     private readonly CreateTaxRateRequestValidator _createValidator = new();
+    private readonly UpdateTaxRateRequestValidator _updateValidator = new();
 
     [Fact]
     public void A_well_formed_country_wide_request_is_valid()
@@ -72,5 +73,31 @@ public class TaxRateValidatorsTests
         _createValidator.Validate(request).IsValid.Should().BeTrue();
     }
 
+    [Fact]
+    public void A_well_formed_update_request_is_valid()
+    {
+        var request = ValidUpdateRequest();
+
+        _updateValidator.Validate(request).IsValid.Should().BeTrue();
+    }
+
+    [Fact]
+    public void A_zero_id_is_rejected_on_update()
+    {
+        var request = ValidUpdateRequest() with { Id = 0 };
+
+        _updateValidator.Validate(request).IsValid.Should().BeFalse();
+    }
+
+    [Fact]
+    public void A_rate_over_100_is_rejected_on_update()
+    {
+        var request = ValidUpdateRequest() with { RatePercent = 100.01m };
+
+        _updateValidator.Validate(request).IsValid.Should().BeFalse();
+    }
+
     private static CreateTaxRateRequest ValidRequest() => new("US", null, "Standard", 8.25m, true);
+
+    private static UpdateTaxRateRequest ValidUpdateRequest() => new(1, "US", null, "Standard", 8.25m, true);
 }

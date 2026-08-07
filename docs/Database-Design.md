@@ -31,10 +31,38 @@ PriceWhenAdded` (Milestone 6.1/6.2), `WishlistItems` (Milestone 6.3), and
 all of them. Milestone 7.4 (the Checkout Calculation Service) adds **no
 schema at all** - it's a pure calculator composing the three services above,
 same reasoning as Milestone 5.2's `IPricingService`. `Addresses` (Milestone
-8.1, `AddressSchema`) is the next new table - a customer's saved address
-book, account-only like `WishlistItems`. No customer-order tables exist yet;
-those arrive starting Milestone 9. This document grows into a full ER-level
-description of the schema as they're introduced.
+8.1, `AddressSchema`) is a customer's saved address book, account-only like
+`WishlistItems`.
+
+**Order and post-purchase schema** (the final stretch, M9-M16): `OrderSchema`
+(M9.1) adds `Orders`/`OrderItems`. `PaymentSchema` (M9.2) adds `Payments`.
+`OrderStockIssueMessage` (M9.3) and `OrderAdminNotes` (M10.2) add no new
+tables - just a nullable column each on `Orders`. `ShipmentSchema` (M10.3)
+adds `Shipments`, and is the last schema change M9-M11's order-management
+work needs - the admin order queue (M10.1), order detail/cancel (M10.2),
+dashboard/order list (M11.1), tracking/invoice (M11.2), and reorder (M11.3)
+are all built entirely on `Orders`/`OrderItems`/`Payments`/`Shipments`,
+adding no schema of their own. `ReviewSchema` (M12.1) adds `Reviews`;
+`ReviewModerationSchema` (M12.2) adds `ReviewReports`. Cancellation (M13.1)
+adds no schema - it reuses `OrderStatus.Cancelled`, already defined in
+`OrderSchema`. `ReturnRequestSchema` (M13.2) adds `ReturnRequests`/
+`ReturnRequestItems`; `RefundSchema` (M13.3) adds `Refunds`. Finance (M14.1
+ledger/dashboard, M14.2 cash flow, M14.3 reports/export) adds **no schema at
+all** - `IFinanceService`/`IReportingService` are pure query layers over the
+already-existing `Payments`/`Refunds` tables, the same "no table of its own"
+reasoning `IPricingService` and the Checkout Calculation Service use.
+Notifications (M15.1 email templates) adds no schema either - it's a Razor
+rendering layer plus an `IEmailNotificationService` abstraction, not a
+table. `OutboxMessageSchema` (M15.2) adds `OutboxMessages`; the M15.3
+background processor that drains it adds no schema of its own. User
+management (M16.1) and audit logging (M16.2) add no schema - both operate
+on `AspNetUsers` and `SecurityAuditEvents`, both already present since
+Milestone 1's `InitialIdentityAndSecurity` migration. `StoreSettingsSchema`
+(M16.3) adds `StoreSettings`, the last table the schema needed - Milestone
+17 (security/data-protection/reliability hardening) and Milestone 18.1
+(test coverage/test-DB safety) are both entirely schema-free, changing only
+middleware, EF Core configuration, and tests. See `Data-Dictionary.md` for
+full column-by-column detail on every table listed above.
 
 `ApplicationDbContext` now extends `IdentityDbContext<ApplicationUser,
 IdentityRole, string>` rather than plain `DbContext`, so Identity's tables

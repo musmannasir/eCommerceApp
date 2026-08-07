@@ -2964,6 +2964,307 @@ and confirmed the fix's before/after directly - the same page in a
 freshly-opened tab (bypassing the first tab's cached CSP enforcement from
 before the fix) showed the `data:image/svg+xml` violation cleared.
 
+## Data protection & performance (Milestone 17.2)
+
+**No explicit forward-reference this time** (unlike Milestone 17.1's
+`Security.md` breadcrumb) - scope was researched and agreed as reasonable
+conventions, the same way Milestones 6.1-16.3 were, but grounded in concrete,
+observed gaps rather than a speculative reading of the milestone name.
+
+**Data Protection key persistence.** ASP.NET Core's Data Protection API had
+never been configured - `builder.Services.AddDataProtection()` was never
+called anywhere, so it ran on the framework default (ephemeral or Windows-
+DPAPI-derived key material with no explicit persistence). In practice this
+meant every antiforgery token and protected cookie issued before an app
+restart, redeploy, or scale-out to a second instance became unreadable
+afterward, since a new process has no way to reconstruct the old key. Now
+configured in `Program.cs`: `AddDataProtection().SetApplicationName("ECommerceApp").PersistKeysToFileSystem(...)`,
+writing to `DataProtection-Keys/` next to the app (overridable via
+`DataProtection:KeyPath`) - deliberately **outside** `wwwroot`, since
+anything under `wwwroot` is served as a static file and key material must
+never be publicly downloadable. **Certificate- or Key-Vault-based
+encryption-at-rest for the keys themselves is deliberately not built here**
+- Azure, IIS, and a container host each do this differently, and there's no
+specified deployment target to build against, the same reasoning that kept
+Milestone 15.1 from wiring up a real SMTP sender with no real SMTP account
+to send through.
+
+**QuerySplittingBehavior default.** The dev server had been emitting EF
+Core's `MultipleCollectionIncludeWarning` repeatedly across this entire
+session's own manual verification steps (confirmed via `grep` across
+`Logs/*.txt`, not a one-off) - a real, observed issue, not a hypothetical
+one. `ProductService.cs` already had one call site opting into
+`.AsSplitQuery()` explicitly, proving the pattern was already known in this
+codebase; the gap was that nothing set a *default*, so any other multi-
+collection-include query added later would silently fall back to
+`SingleQuery`'s cartesian-product join and re-trigger the same warning.
+`DependencyInjection.cs`'s `UseSqlServer(...)` call now sets
+`UseQuerySplittingBehavior(QuerySplittingBehavior.SplitQuery)` globally -
+resolved via manual verification (the warning no longer appears in the dev
+server's logs after loading the product detail page, the exact query shape
+that used to trigger it).
+
+**`AsNoTracking()` added only where it has real effect, not blanket-applied.**
+Before touching anything, `FinanceService`, `ReportingService`, and
+`AuditLogService` were all inspected - despite zero existing
+`AsNoTracking()` calls, `FinanceService`'s and `ReportingService`'s queries
+are already tracking-free by construction (pure scalar aggregates via
+`SumAsync`/`CountAsync`, or `.Select(...)` projections into anonymous types/
+DTOs before materialization - EF Core only tracks mapped entity types, never
+projected shapes), so adding `AsNoTracking()` there would be inert, no-op
+code. `AuditLogService.BuildMatchingEntriesAsync` and
+`UserManagementService.GetPagedAsync`, by contrast, both materialize full
+tracked entities (`SecurityAuditEvent`, `ApplicationUser`) for what are
+purely read-only list views (confirmed: every mutation in
+`UserManagementService` goes through a separate `UserManager.FindByIdAsync`
+call, never through this listing query) - `AsNoTracking()` was added to
+both, a real saving since `AuditLogService.GetAllAsync`'s unpaginated CSV-
+export path in particular can load a genuinely large row count.
+
+**HTTP response compression.** Never configured before this milestone.
+`AddResponseCompression(options => options.EnableForHttps = true)` (Brotli
+and Gzip providers are included automatically) plus `app.UseResponseCompression()`
+placed immediately after the security-headers middleware, before anything
+that writes to the response body - manually verified via `fetch()` against
+the running dev server, which returned `Content-Encoding: br`.
+
+**Explicitly out of scope, and why:** a GDPR-style "export my data"/"delete
+my account" feature (no evidence anywhere - existing `IdempotencyKey`-
+protected APIs, `Payment.MaskedCardNumber`, and `RefreshToken.TokenHash`
+already establish this app takes PII seriously where it's evidenced, but
+building a full data-subject-rights feature with zero forward-reference
+would be speculative scope creep); a distributed cache (Redis/SQL Server) to
+replace `IMemoryCache` - `Architecture.md`'s own existing "known, documented
+limitation" note on the checkout-idempotency cache already flags this
+single-instance constraint explicitly rather than leaving it a silent gap,
+and there's no specified target cache backend to build against, the same
+"no speculative infra" reasoning applied to the Data Protection key-
+encryption decision above.
+
+**Manually verified** against the real dev database: after a real request,
+confirmed a real `key-*.xml` file was written to `DataProtection-Keys/` (not
+just held in memory); loaded the product detail page and confirmed the
+`MultipleCollectionIncludeWarning` no longer appears in the dev server's
+logs; confirmed `Content-Encoding: br` on a real response; and confirmed the
+Ledger, Audit Log, and Top Selling Products admin pages all still show
+correct, real data after the `AsNoTracking()` changes.
+
+## Reliability (Milestone 17.3)
+
+**No explicit forward-reference** (same as Milestone 17.2) - scope was
+researched and agreed as reasonable conventions, grounded in concrete gaps
+an Explore-agent audit found rather than a speculative reading of the
+milestone name.
+
+**`SqlServerHealthCheck` now has a bounded 5-second timeout.** Previously
+`CanConnectAsync` had no deadline at all - a struggling-but-not-fully-down
+SQL Server (heavy load, mid-failover) could make the `/health/ready` probe
+hang indefinitely, which defeats its purpose: an orchestrator polling
+readiness to decide whether to route traffic here needs a fast answer, and
+a slow one is exactly as unhelpful as no answer at all. It now fails fast
+and reports unhealthy instead.
+
+**Graceful shutdown timeout raised from the 5-second framework default to
+30 seconds** (`Program.cs`, `ConfigureHostOptions`). Most requests in this
+app finish well under 5 seconds, but a few plausibly don't (an in-flight
+`PlaceOrder`, a large CSV export) - this gives them a real chance to finish
+cleanly during a deploy/restart instead of being aborted mid-transaction.
+
+**`EnableRetryOnFailure` was investigated, implemented, and then
+deliberately reverted - this is worth documenting in detail, since it's
+the single most standard "reliability" fix for an ASP.NET Core + SQL Server
+app, and abandoning it was not a small decision.** EF Core's connection-
+retry policy is incompatible with a manually-started transaction
+(`Database.BeginTransactionAsync()`) unless that transaction - and
+everything inside it - is wrapped in
+`Database.CreateExecutionStrategy().ExecuteAsync(...)`, since the retrying
+strategy needs to be able to re-run the *whole* transaction, not just
+whichever statement happened to fail. This app has exactly one such
+pattern, used in 7 methods total (6 in `InventoryService`: `RecordOpeningStockAsync`,
+`AdjustStockAsync`, `ReserveStockAsync`, `ReleaseReservationAsync`,
+`ConsumeReservationAsync`, `RestockReturnedItemAsync`; 1 in
+`PurchaseOrderService`: `ReceiveAsync`).
+
+The naive fix - wrap `BeginTransactionAsync`/`SaveChangesAsync`/`CommitAsync`
+in `strategy.ExecuteAsync(async () => {...})` and leave everything else
+unchanged - was implemented first, and then caught in review before it
+shipped: several of these methods call a private `AddMovement(...)` helper
+*inside* that block, which does `_dbContext.StockMovements.Add(new
+StockMovement {...})` - creating a genuinely new tracked entity. If a
+transient fault occurs after `AddMovement` runs (and its `SaveChangesAsync`)
+but before `CommitAsync`, the SQL-level transaction rolls back, but the
+*same* `DbContext` instance still holds that `StockMovement` tracked as
+`Added` - nothing client-side undoes that. `ExecuteAsync`'s retry re-runs
+the entire lambda from the top, which calls `AddMovement` *again*,
+producing a second, different `StockMovement` object also tracked as
+`Added`. When the retry's `SaveChangesAsync` finally succeeds, **both**
+get inserted - a real, silent duplicate stock-movement bug, triggered by
+exactly the kind of transient failure `EnableRetryOnFailure` exists to
+protect against. The fully-correct fix exists (Microsoft's documented
+pattern: clear the change tracker and re-fetch/re-mutate every entity
+inside the retried delegate, so each attempt starts from a clean slate) but
+requires restructuring all 7 methods - moving validation, entity loading,
+and mutation logic that currently sits outside the transaction block to
+inside it, re-deriving values fresh per attempt. That's real,
+correctness-sensitive work on business-critical inventory/purchase-order
+code - the kind that deserves its own dedicated, carefully-tested effort,
+not something to fold into a general reliability pass under time pressure.
+Shipping the naive version (or shipping nothing while glossing over why)
+would both have been worse than clearly documenting the gap and moving on.
+`DependencyInjection.cs`'s `UseSqlServer(...)` call carries the same
+reasoning inline, so the "why isn't this here" question is answerable from
+the code itself, not just this doc.
+
+**Explicitly deferred, and why:** a `CancellationToken` gap across 15 of 21
+Admin controllers (~100+ action methods, confirmed via `grep` - every
+customer-facing controller threads it consistently, most Admin controllers
+don't) - real and systematic, but every one of those endpoints is
+staff-only, authenticated, and low-concurrency, so the actual reliability
+payoff is small next to a 100+-method mechanical sweep, disproportionate to
+one milestone slice compared to every other sub-milestone this session.
+HTTP client resilience (Polly, `IHttpClientFactory` resilience handlers) -
+moot, since there is no real outbound HTTP call anywhere in this app;
+`SimulatedPaymentGateway` and `DevEmailSender` are both fully local, with
+zero network calls to protect.
+
+**Manually verified** against the real dev database: confirmed `/health/ready`
+still reports healthy; logged in as SuperAdmin and ran a real stock
+adjustment (`InventoryService.AdjustStockAsync`, one of the methods touched
+and then reverted) end-to-end through the admin UI, confirming exactly one
+`ManualAdjustment` movement row was written (17 → 20 on hand, no duplicate
+row) - direct confirmation that the revert left this transactional code
+path fully intact and correct.
+
+## Test coverage & test-DB safety (Milestone 18.1)
+
+Researched via two explicit `Testing-Guide.md` forward-references (the same
+kind of breadcrumb `Security.md` gave M17.1): the test-database bootstrap
+must, from Milestone 18 onward, actively reject a connection string that
+looks like the dev or production database, and Milestone 18 is what sets
+the project's numeric coverage targets (>=80% Application-layer, >=70%
+overall meaningful line coverage) rather than gating on them per-milestone.
+
+**Test-database safety guard.** `TestDatabase.ResetAsync` previously trusted
+its own hardcoded `ConnectionString` constant unconditionally - correct as
+long as nothing else ever wired the DbContext up differently, but with no
+runtime check protecting that assumption. It now resolves the
+`ApplicationDbContext`'s actual, live connection string via
+`SqlConnectionStringBuilder` and throws `InvalidOperationException` before
+running a single `DELETE` unless the resolved database name is exactly
+`ECommerceAppTestDb`. Deliberately checks the context's real connection at
+call time rather than re-comparing the constant to itself - the point is to
+catch a future mistake in how the connection gets wired up, not to restate
+the current wiring. `TestDatabaseSafetyGuardTests` proves it: builds an
+`ApplicationDbContext` pointed at `ECommerceAppDb` (the dev database name)
+and confirms `ResetAsync` throws with the database name in the message,
+before any connection is ever opened - the guard reads the connection
+string, it doesn't need to reach the database to reject it.
+
+**Coverage tooling.** The Coverlet "XPlat Code Coverage" collector, run with
+no configuration, counted EF Core's generated `Migrations/*.cs` as coverable
+lines - boilerplate that grows every milestone regardless of test quality
+and is already exercised as a whole by every integration test run that
+applies migrations, never meaningfully unit-tested line-by-line. A
+`coverlet.runsettings` file (repo root) excludes `**/Migrations/*.cs` and
+`**/obj/**/*.cs` from the denominator. Its first version tripped its own
+mechanism: the explanatory XML comment contained the literal text
+`--settings` / `--collect`, and XML comments can't contain `--` - `dotnet
+test` silently ignored the malformed settings file rather than failing loud,
+which meant the collector never ran and no `coverage.cobertura.xml` files
+were produced at all. Reworded the comment to avoid double-hyphens once this
+was traced back to the actual cause.
+
+Each of the 5 test projects only captures coverage for the assemblies it
+loads, so getting one real, solution-wide number requires merging their
+`coverage.cobertura.xml` files with `dotnet-reportgenerator-globaltool`
+rather than reading any single project's report in isolation (a naive read
+of just one file understates coverage for any class that other test
+projects also exercise).
+
+**Judgment call - extending scope past the original gap list.** Research
+had identified 5 validators with zero dedicated tests
+(`LoginRequestValidator`, `ForgotPasswordRequestValidator`,
+`ResetPasswordRequestValidator`, the `Brand` and `Cart` validator pairs) plus
+a missing `BrandsController` admin-authorization test - every other admin
+controller already had one via `*AuthorizationTests`. Tests for all of these
+were written first. The resulting coverage run still measured Application
+layer at 77.3%, short of the milestone's own 80% target. Rather than accept
+the shortfall, inspected the merged report's per-class breakdown and found
+10 more `Update*RequestValidator` classes sitting at 0% that the original
+research had missed - `Category`, `Product`, `Variant`, `Specification`,
+`Supplier`, `SupplierProduct`, `Warehouse`, `HomePageBanner`, `Promotion`,
+`ShippingMethod`, `TaxRate`. These are the same small, mechanical
+well-formed/malformed-fields test pattern already used throughout
+`ECommerceApp.Application.Tests` - unlike the M17.3 `CancellationToken` gap
+(100+ methods across 15 controllers, genuinely disproportionate to one
+slice), adding ~25 more `[Fact]`s following an established pattern is not a
+scope blowout, and this is specifically the milestone that sets a numeric
+gate. Extended scope to cover all of them rather than stop short of a target
+the milestone itself defines.
+
+**Final measured coverage** (merged across all 5 test projects, migrations
+excluded): **89.5% Application-layer, 76.5% overall** - both exceed target.
+Domain 96.3%, Infrastructure 88.4%, Web 56.7% (no numeric target - most
+uncovered Web lines are controller/view-model glue already exercised
+end-to-end by the integration suite, not unit-testable business logic).
+
+**Pre-existing flake noticed, not fixed.**
+`OutboxProcessingBackgroundServiceTests.A_processing_pass_that_throws_does_not_stop_the_background_loop`
+(from M15.3) waits on real wall-clock `Task.Delay` against a background
+service's polling interval; under full-suite parallel load (5 `dotnet test`
+processes plus real SQL Server contention) it can miss its window and see 0
+calls instead of the expected 2. Reproduced twice under full-suite load,
+passes reliably in isolation - confirmed contention-based flakiness, not a
+regression from this milestone's changes, and fixing it (rewriting the test
+to poll instead of sleep-and-check) is a testing-infrastructure change
+outside M18.1's scope.
+
+## Deployment package & final checks (Milestone 18.3)
+
+Scope was pre-declared in `Deployment-Guide.md` from the Foundation
+milestone onward, so this milestone was execution against a real publish
+output rather than research. Full detail lives in `Deployment-Guide.md`;
+this section covers what's architecturally relevant.
+
+**Verified, not assumed**: published the app for real (`dotnet publish`),
+confirmed the generated `web.config` targets `hostingModel="inprocess"`
+(framework-dependent - `processPath="dotnet"`, not a self-contained or
+single-file build), then ran the published output standalone under
+`ASPNETCORE_ENVIRONMENT=Production` with all four required secrets
+(`ConnectionStrings__DefaultConnection`, `Jwt__Key`, `SeedAdmin__Email`,
+`SeedAdmin__Password`) supplied only as environment variables - no User
+Secrets, no `appsettings.Production.json` (none exists in this repo, and
+none is needed: the base `appsettings.json` was already production-safe by
+construction, per `Security.md`'s secrets-handling rules from Milestone 1
+onward). Migrated a disposable database via both `dotnet ef migrations
+script --idempotent` and `dotnet ef database update`, both resolving
+correctly from an environment-variable connection string alone. The app
+started clean; `/health/live`, `/health/ready`, and `/` all returned real
+200s with the Milestone 17.1 security headers present.
+
+**Two real findings from that run**, both folded into `Deployment-Guide.md`
+rather than left implicit:
+
+- `No XML encryptor configured. Key ... may be persisted to storage in
+  unencrypted form.` - expected for a single-server deployment (the key
+  ring falls back to Windows DPAPI); a genuine open decision for a
+  multi-server farm, consistent with `Program.cs`'s own comment already
+  deferring encryption-at-rest configuration for lack of a chosen
+  deployment target (see the "Data protection & performance" section
+  above).
+- `Failed to determine the https port for redirect` - appears specifically
+  when no HTTPS site binding is present; under real IIS, the ASP.NET Core
+  Module sets `ASPNETCORE_HTTPS_PORT` automatically from the site's HTTPS
+  binding, so this is an IIS-configuration signal, not something the app
+  needs to handle itself.
+
+**One incidental repo fix**: `publish/` (the default `dotnet publish`
+output directory used throughout this milestone's verification) was
+untracked but not gitignored - added to `.gitignore`, the same class of
+gap `TestResults/` was in before Milestone 18.1 fixed it.
+
+This is the final sub-milestone of the 18-milestone build.
+
 ## Framework version note
 
 The brief fixes the stack at **.NET 8**. This machine has only the **.NET 10**

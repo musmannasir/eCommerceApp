@@ -12,6 +12,8 @@
 .vs/
 *.user
 *.suo
+TestResults/
+publish/
 
 # Environment and secrets
 .env
@@ -21,6 +23,9 @@
 # Logs
 *.log
 logs/
+
+# ASP.NET Core Data Protection keys - key material must never be committed
+DataProtection-Keys/
 
 # Database files
 *.mdf

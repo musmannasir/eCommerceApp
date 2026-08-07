@@ -64,4 +64,43 @@ public class CatalogAuthorizationTests
         response.IsSuccessStatusCode.Should().BeTrue();
         body.Should().Contain("New product");
     }
+
+    [Fact]
+    public async Task Anonymous_request_is_redirected_to_login_instead_of_brands()
+    {
+        var client = _fixture.Factory.CreateClient();
+
+        var response = await client.GetAsync("/Admin/Brands/Index");
+        var body = await response.Content.ReadAsStringAsync();
+
+        response.IsSuccessStatusCode.Should().BeTrue();
+        body.Should().Contain("Log in").And.NotContain("New brand");
+    }
+
+    [Fact]
+    public async Task Customer_cannot_manage_brands()
+    {
+        var client = _fixture.Factory.CreateClient();
+        var email = $"customer.brands.{Guid.NewGuid():N}@example.com";
+        await client.RegisterViaFormAsync(email, "Str0ng!Passw0rd", "Test", "Customer");
+
+        var response = await client.GetAsync("/Admin/Brands/Index");
+
+        ((int)response.StatusCode).Should().Be(403);
+    }
+
+    [Fact]
+    public async Task CatalogManager_can_manage_brands()
+    {
+        var client = _fixture.Factory.CreateClient();
+        var email = $"catalogmanager.brands.{Guid.NewGuid():N}@example.com";
+        await _fixture.Factory.CreateUserInRoleAsync(email, "Str0ng!Passw0rd", "CatalogManager");
+        await client.LoginViaFormAsync(email, "Str0ng!Passw0rd");
+
+        var response = await client.GetAsync("/Admin/Brands/Index");
+        var body = await response.Content.ReadAsStringAsync();
+
+        response.IsSuccessStatusCode.Should().BeTrue();
+        body.Should().Contain("New brand");
+    }
 }

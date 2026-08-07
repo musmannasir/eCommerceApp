@@ -1,8 +1,17 @@
 # Data Dictionary
 
-Tables added by the `InitialIdentityAndSecurity` migration (Milestone 1), the
-`CatalogSchema` migration (Milestone 2), and the `InventorySchema` migration
-(Milestone 3.1).
+Complete, final schema (M1 through M18.1) - every application-specific table
+the app has, in the order its migration introduced it: Identity's own tables
+plus `RefreshTokens`/`UserSessions`/`SecurityAuditEvents` (M1), catalog
+(M2), inventory/suppliers/purchase orders (M3), `HomePageBanners` (M4.1),
+`RecentlyViewedItems` (M5.3), `Carts`/`CartItems` (M6), `WishlistItems`
+(M6.3), `Promotions` (M7.1), `TaxRates` (M7.2), `ShippingMethods` (M7.3),
+`Addresses` (M8.1), `Orders`/`OrderItems` (M9.1), `Payments` (M9.2),
+`Shipments` (M10.3), `Reviews` (M12.1), `ReviewReports` (M12.2),
+`ReturnRequests`/`ReturnRequestItems` (M13.2), `Refunds` (M13.3),
+`OutboxMessages` (M15.2), and `StoreSettings` (M16.3). Admin user management
+(M16.1) and audit logging (M16.2) introduced no new tables - both read/write
+`AspNetUsers` and `SecurityAuditEvents`, which already existed since M1.
 ASP.NET Core Identity's own tables (`AspNetUsers`, `AspNetRoles`,
 `AspNetUserRoles`, `AspNetUserClaims`, `AspNetUserLogins`,
 `AspNetUserTokens`, `AspNetRoleClaims`) follow the framework's standard
@@ -622,12 +631,266 @@ reasoning as `WishlistItems`/`Carts`/`CartItems`: a customer who deletes
 their own address wants it gone, and there's no admin recycle bin for
 personal data.
 
+## Orders
+
+Orders (Milestone 9.1) - a placed order, created once Checkout's server-side
+revalidation succeeds. Everything a customer saw on the Review page is
+frozen onto this row rather than referenced live: the shipping address is
+fully copied (`Address` has no soft delete, so a customer deleting it later
+must not corrupt past orders), and the applied shipping method/promotion are
+snapshotted by name/amount even though their ids are also kept.
+
+| Column | Type | Nullable | Purpose |
+|---|---|---|---|
+| Id | int (identity) | No | Surrogate key |
+| OrderNumber | nvarchar(20) | No | Customer-facing identifier; unique index; not a raw database id |
+| UserId | nvarchar(450) | No | Owning customer |
+| Status | int (enum) | No | Pending/Paid/PaymentFailed/StockReservationFailed/Cancelled/Shipped/Delivered - see `OrderStatusTransitions` for legal transitions |
+| IdempotencyKey | nvarchar(64) | No | Unique index; a duplicate PlaceOrder submission (double-click, retry) resolves to the same order rather than creating a second one |
+| ShippingLabel | nvarchar(100) | Yes | The saved address's own label, snapshotted (e.g. "Home") |
+| ShippingFullName / ShippingPhone / ShippingLine1 / ShippingLine2 / ShippingCity / ShippingRegionCode / ShippingPostalCode / ShippingCountryCode | nvarchar (various) | Line1/City/PostalCode/CountryCode/FullName/Phone required, Line2/RegionCode optional | Full copy of the address chosen at checkout |
+| ShippingMethodId | int | Yes | FK to ShippingMethods, Restrict delete |
+| ShippingMethodName | nvarchar(200) | No | Snapshot, survives the method being renamed/deactivated later |
+| ShippingCost | decimal(18,2) | No | |
+| PromotionId | int | Yes | FK to Promotions, Restrict delete |
+| AppliedCouponCode | nvarchar(50) | Yes | Snapshot |
+| AppliedPromotionName | nvarchar(200) | Yes | Snapshot |
+| PromotionDiscountAmount | decimal(18,2) | No | |
+| Subtotal | decimal(18,2) | No | |
+| Tax | decimal(18,2) | No | |
+| GrandTotal | decimal(18,2) | No | |
+| StockIssueMessage | nvarchar(500) | Yes | Set only when Status is StockReservationFailed, naming the affected line |
+| AdminNotes | nvarchar(2000) | Yes | Staff-only annotation (Milestone 10.2) - never shown to the customer |
+
+Indexes: unique on `OrderNumber`, unique on `IdempotencyKey`, non-unique on
+`UserId` and `Status`. `AuditableEntity` (soft delete + RowVersion).
+
+## OrderItems
+
+One purchased line, snapshotted the same way `PurchaseOrderItem` snapshots
+`ProductName`/`ProductSku` - so order history stays accurate even if the
+product is later renamed, re-priced, or deactivated.
+
+| Column | Type | Nullable | Purpose |
+|---|---|---|---|
+| Id | int (identity) | No | Surrogate key |
+| OrderId | int | No | FK to Orders, Cascade delete |
+| ProductId | int | No | FK to Products, Restrict delete |
+| ProductVariantId | int | Yes | FK to ProductVariants, Restrict delete |
+| ProductName | nvarchar(200) | No | Snapshot |
+| Sku | nvarchar(100) | No | Snapshot |
+| VariantDescription | nvarchar(500) | Yes | Snapshot, e.g. "Color: Red" |
+| ImagePath | nvarchar(500) | Yes | Snapshot |
+| UnitPrice | decimal(18,2) | No | Snapshot; `LineTotal` is computed as `Quantity * UnitPrice`, never stored |
+| Quantity | int | No | |
+
+Indexes: non-unique on `OrderId`. `AuditableEntity`.
+
+## Payments
+
+The result of a single (simulated) charge attempt against an Order
+(Milestone 9.2). Deliberately does **not** derive from `AuditableEntity` -
+no soft delete, no `UpdatedAtUtc`, no `RowVersion` - the same reasoning
+`StockMovements` uses: this row is written once, synchronously, with its
+final outcome already known, and never updated afterward. A correction (a
+refund) records a new, separate `Refund` transaction rather than editing
+this one. Never stores the real card number - only a masked last 4 and the
+detected brand, mirroring real PCI-compliant practice even in simulation.
+
+| Column | Type | Nullable | Purpose |
+|---|---|---|---|
+| Id | int (identity) | No | Surrogate key |
+| OrderId | int | No | FK to Orders, Cascade delete; unique index (at most one payment attempt per order) |
+| MethodType | int (enum) | No | Only `CreditCard` exists today |
+| Amount | decimal(18,2) | No | |
+| Status | int (enum) | No | Succeeded/Declined |
+| MaskedCardNumber | nvarchar(32) | No | e.g. "**** **** **** 4242" |
+| CardBrand | nvarchar(50) | No | |
+| DeclineReason | nvarchar(200) | Yes | Set only when Status is Declined |
+| ProcessedAtUtc | datetime2 | No | |
+
+Indexes: unique on `OrderId`. Plain `BaseEntity` - immutable financial
+transaction record, never soft-deleted per `ISoftDeletable`'s own contract.
+
+## Shipments
+
+One shipment per order (Milestone 10.3) - a v1 scope choice, the same
+reasoning `Payment`'s unique `OrderId` index uses: nothing upstream splits
+an order into multiple packages, so a real multi-shipment model would be
+speculative. Unlike `Payment`, has a real mutable lifecycle
+(shipped -> delivered), so it derives from `AuditableEntity` rather than an
+immutable, insert-once type.
+
+| Column | Type | Nullable | Purpose |
+|---|---|---|---|
+| Id | int (identity) | No | Surrogate key |
+| OrderId | int | No | FK to Orders, Cascade delete; unique index |
+| Carrier | nvarchar(100) | No | Free text, entered by staff on "Mark shipped" |
+| TrackingNumber | nvarchar(100) | No | Free text |
+| ShippedAtUtc | datetime2 | No | |
+| DeliveredAtUtc | datetime2 | Yes | Set by staff's "Mark delivered" action |
+
+Indexes: unique on `OrderId`. `AuditableEntity`.
+
+## Reviews
+
+One review per (user, product), enforced via a unique index - the same
+pattern `WishlistItem`'s toggle constraint uses. `AuditableEntity` rather
+than a plain `BaseEntity`: unlike a wishlist bookmark or an immutable ledger
+row, a review is substantive content that moderation needs to soft-delete
+without losing the audit trail.
+
+| Column | Type | Nullable | Purpose |
+|---|---|---|---|
+| Id | int (identity) | No | Surrogate key |
+| ProductId | int | No | FK to Products, Cascade delete |
+| UserId | nvarchar(450) | No | |
+| Rating | int | No | 1-5 |
+| Title | nvarchar(150) | Yes | |
+| Body | nvarchar(2000) | No | |
+| IsVerifiedPurchase | bool | No | Computed once at submission time from the customer's order history (a genuinely charged order - Paid/Shipped/Delivered/Cancelled) - a snapshot, not live-recomputed |
+
+Indexes: unique on `(UserId, ProductId)`. `AuditableEntity`.
+
+## ReviewReports
+
+One customer's flag on a review, driving the admin moderation queue
+(Milestone 12.2). `BaseEntity`, not `AuditableEntity` - a report is a
+one-time event that's never edited, the same reasoning `WishlistItem` uses
+for its own toggle records. Acting on the review (Dismiss or Remove) clears
+its reports entirely rather than tracking a resolved/unresolved status -
+there's no persistent moderation audit log in this scope, so a review with
+reports is simply "still queued" and one with none is not.
+
+| Column | Type | Nullable | Purpose |
+|---|---|---|---|
+| Id | int (identity) | No | Surrogate key |
+| ReviewId | int | No | FK to Reviews, Cascade delete |
+| ReporterUserId | nvarchar(450) | No | |
+| Reason | int (enum) | No | |
+| Comment | nvarchar(500) | Yes | |
+| CreatedAtUtc | datetime2 | No | |
+
+Indexes: unique on `(ReviewId, ReporterUserId)` - at most one report per
+customer per review. Plain `BaseEntity`.
+
+## ReturnRequests
+
+A customer's request to return some or all of a Delivered order's items
+(Milestone 13.1/13.2). `UserId` is a snapshot (mirrors `Review`'s own
+denormalization), not just derivable via `Order.UserId`, so ownership
+queries don't need a join. At most one open (Requested/Approved) request
+per order is enforced at the service layer, not a DB-level filtered index.
+There is no day-count return window anywhere in this app to enforce
+(`Product.ReturnEligibility` is deliberately unstructured free text), so
+eligibility is gated purely by the order having reached `Delivered`.
+
+| Column | Type | Nullable | Purpose |
+|---|---|---|---|
+| Id | int (identity) | No | Surrogate key |
+| OrderId | int | No | FK to Orders, Restrict delete |
+| UserId | nvarchar(450) | No | Snapshot |
+| Reason | int (enum) | No | Defective/WrongItem/NoLongerNeeded/NotAsDescribed/Other |
+| Comment | nvarchar(1000) | Yes | |
+| Status | int (enum) | No | Requested/Approved/Rejected/Refunded |
+| DecidedAtUtc | datetime2 | Yes | Set when staff approve or reject |
+| DecidedByUserId | nvarchar(450) | Yes | |
+| RejectionReason | nvarchar(1000) | Yes | Set only when Status is Rejected |
+
+`AuditableEntity`.
+
+## ReturnRequestItems
+
+Which order line(s), and how much of each, a return request covers.
+`AuditableEntity`, mirroring `OrderItem`/`PurchaseOrderItem`'s own base-type
+choice for a mutable, auditable order line.
+
+| Column | Type | Nullable | Purpose |
+|---|---|---|---|
+| Id | int (identity) | No | Surrogate key |
+| ReturnRequestId | int | No | FK to ReturnRequests, Cascade delete |
+| OrderItemId | int | No | FK to OrderItems, Restrict delete |
+| Quantity | int | No | |
+
+`AuditableEntity`.
+
+## Refunds
+
+A refund issued once a return request's items are physically received back
+(Milestone 13.3). Deliberately does **not** derive from `AuditableEntity`,
+the same reasoning `Payment` itself uses: an immutable, insert-once
+financial ledger entry. A refund is recorded as a new, separate transaction
+rather than by editing the original `Payment` row.
+
+| Column | Type | Nullable | Purpose |
+|---|---|---|---|
+| Id | int (identity) | No | Surrogate key |
+| OrderId | int | No | FK to Orders, Restrict delete |
+| ReturnRequestId | int | No | FK to ReturnRequests, Restrict delete; unique index (at most one refund per return request) |
+| Amount | decimal(18,2) | No | |
+| ProcessedAtUtc | datetime2 | No | |
+| ProcessedByUserId | nvarchar(450) | Yes | The staff member who clicked "Mark received & refund" |
+
+Indexes: unique on `ReturnRequestId`. Plain `BaseEntity` - immutable
+financial transaction record.
+
+## OutboxMessages
+
+A durable "intent to send" row (Milestone 15.2), written by the same
+`SaveChangesAsync` call that persists the business change it's about (a
+paid `Order`, a password-reset request), so the two either both commit or
+neither does. Uses the mutable `AuditableEntity` base like
+`InventoryReservation`, since - unlike a pure ledger row such as `Payment` -
+this one has a real Pending -> Processed/Failed lifecycle and gets updated
+in place as delivery is attempted by `OutboxProcessingBackgroundService`
+(Milestone 15.3).
+
+| Column | Type | Nullable | Purpose |
+|---|---|---|---|
+| Id | int (identity) | No | Surrogate key |
+| Type | int (enum) | No | OrderConfirmationEmail/PasswordResetEmail |
+| PayloadJson | nvarchar(max) | No | Serialized email model (order details, reset link, etc.) |
+| Status | int (enum) | No | Pending/Processed/Failed |
+| ProcessedAtUtc | datetime2 | Yes | |
+| Attempts | int | No | Incremented on every processing attempt, including failed ones |
+| LastError | nvarchar(2000) | Yes | |
+
+Indexes: non-unique on `Status` - the processor's own lookup, every Pending
+row. `AuditableEntity`.
+
+## StoreSettings
+
+A singleton row (Milestone 16.3) - exactly one is ever seeded/read - of
+store-wide configuration that used to live only in `appsettings.json`'s
+static `Store` section. Derives from `AuditableEntity` specifically for its
+`RowVersion`: two admins editing this same shared row at once is a real
+possibility ordinary per-record entities don't have to worry about.
+`IsDeleted` is inherited but never meaningfully used - there is no recycle
+bin for the one settings row.
+
+| Column | Type | Nullable | Purpose |
+|---|---|---|---|
+| Id | int (identity) | No | Surrogate key; always 1 in practice |
+| StoreName | nvarchar(200) | No | |
+| Currency | nvarchar(10) | No | e.g. "PKR" |
+| DefaultCountry | nvarchar(100) | No | Display-only, distinct from the tax/shipping jurisdiction codes below |
+| PricesIncludeTax | bit | No | |
+| RecentlyViewedMaxItems | int | No | Caps the recently-viewed section's length |
+| DefaultTaxCountryCode | nvarchar(2) | No | Store's default jurisdiction for the Cart page's Estimated tax line, before a real address is known |
+| DefaultTaxRegionCode | nvarchar(10) | Yes | |
+| DefaultShippingCountryCode | nvarchar(2) | No | Same purpose as the tax pair, for Estimated shipping |
+| DefaultShippingRegionCode | nvarchar(10) | Yes | |
+
+`AuditableEntity`.
+
 ## Soft delete and RowVersion
 
 Every table above (except the pure join tables `ProductTagMappings`,
 `ProductVariantAttributeValues`, `SupplierProducts`, `RecentlyViewedItems`,
-`Carts`, `CartItems`, `WishlistItems`, and `Addresses`; and the immutable ledger tables
-`StockMovements`, `StockAdjustments`, `GoodsReceipts`, and `GoodsReceiptItems`) inherits `AuditableEntity`:
+`Carts`, `CartItems`, `WishlistItems`, `Addresses`, and `ReviewReports`; and
+the immutable ledger tables `StockMovements`, `StockAdjustments`,
+`GoodsReceipts`, `GoodsReceiptItems`, `Payments`, and `Refunds`) inherits
+`AuditableEntity`:
 `IsDeleted` (soft
 delete, globally filtered out of normal queries) and `RowVersion` - a real SQL
 Server `rowversion`/`timestamp` column and EF Core concurrency token (see

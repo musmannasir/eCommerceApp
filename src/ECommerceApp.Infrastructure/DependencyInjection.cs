@@ -76,8 +76,31 @@ public static class DependencyInjection
                     "Connection string 'DefaultConnection' was not found. Configure it via User Secrets " +
                     "(see README.md) before running the application.");
 
+            // SplitQuery is the safer default for this app - several queries load more
+            // than one collection navigation off the same root (e.g. Product with its
+            // Images and Variants), which EF Core otherwise warns about every time it
+            // compiles one (MultipleCollectionIncludeWarning): SingleQuery's default
+            // cartesian-product join can multiply row counts across collections,
+            // returning far more data over the wire than the caller actually wants.
+            // A handful of call sites already opt into AsSplitQuery() explicitly
+            // (Milestone 17.2 confirmed this is a real, ongoing warning, not a
+            // hypothetical one) - this makes that the default everywhere instead of
+            // requiring every future multi-collection query to remember to opt in.
+            //
+            // EnableRetryOnFailure was investigated for Milestone 17.3 and
+            // deliberately NOT enabled - see Architecture.md's "Reliability" section
+            // for why. In short: it requires every existing manual
+            // Database.BeginTransactionAsync() call site (InventoryService,
+            // PurchaseOrderService - 7 methods) to be restructured so a retry can't
+            // re-run entity-creation code (AddMovement, etc.) against a change
+            // tracker that still holds a prior failed attempt's now-orphaned
+            // `Added` entities, which would silently double-insert stock movements
+            // on exactly the kind of transient failure this is meant to protect
+            // against. That restructuring is real, correctness-sensitive work on
+            // business-critical inventory code, not a one-line config flip.
             options.UseSqlServer(connectionString, sql =>
-                sql.MigrationsAssembly(typeof(ApplicationDbContext).Assembly.FullName));
+                sql.MigrationsAssembly(typeof(ApplicationDbContext).Assembly.FullName)
+                   .UseQuerySplittingBehavior(QuerySplittingBehavior.SplitQuery));
         });
 
         services.AddSingleton<IClock, SystemClock>();

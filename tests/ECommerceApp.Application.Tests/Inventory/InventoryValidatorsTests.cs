@@ -23,6 +23,22 @@ public class InventoryValidatorsTests
     }
 
     [Fact]
+    public void A_well_formed_warehouse_update_is_valid()
+    {
+        var request = new UpdateWarehouseRequest(1, "Main", "WH1", null, null, null, null, null, null, true, true);
+
+        new UpdateWarehouseRequestValidator().Validate(request).IsValid.Should().BeTrue();
+    }
+
+    [Fact]
+    public void A_zero_id_is_rejected_on_warehouse_update()
+    {
+        var request = new UpdateWarehouseRequest(0, "Main", "WH1", null, null, null, null, null, null, true, true);
+
+        new UpdateWarehouseRequestValidator().Validate(request).IsValid.Should().BeFalse();
+    }
+
+    [Fact]
     public void A_well_formed_opening_stock_request_is_valid()
     {
         var request = new RecordOpeningStockRequest(1, 1, null, 10, 5, 20, false);

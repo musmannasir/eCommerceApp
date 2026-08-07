@@ -51,7 +51,10 @@ public sealed class UserManagementService : IUserManagementService
             usersQuery = usersQuery.Where(u => u.IsActive == query.ActiveOnly.Value);
         }
 
-        var users = await usersQuery.OrderBy(u => u.Email).ToListAsync(cancellationToken);
+        // AsNoTracking - a pure read-only listing; every mutation in this
+        // service goes through UserManager.FindByIdAsync separately, so this
+        // query's results are never saved back.
+        var users = await usersQuery.AsNoTracking().OrderBy(u => u.Email).ToListAsync(cancellationToken);
 
         var userRoles = await (
             from ur in _dbContext.UserRoles
